@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/colors';
 
 import HomeScreen from '../screens/HomeScreen';
@@ -43,6 +44,10 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
 }
 
 function MainTabs() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 8 : 6);
+  const tabBarHeight = 48 + bottomPad;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -54,9 +59,9 @@ function MainTabs() {
           backgroundColor: COLORS.surface,
           borderTopColor: COLORS.border,
           borderTopWidth: 1,
-          paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+          paddingBottom: bottomPad,
           paddingTop: 8,
-          height: Platform.OS === 'ios' ? 82 : 68,
+          height: tabBarHeight,
         },
         tabBarLabelStyle: {
           fontSize: 11,

@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -62,6 +63,7 @@ function fmtWeekRange(sun: Date): string {
 export default function WeekScreen() {
   const nav = useNavigation<Nav>();
   const { jobs, shifts, recurringShifts } = useApp();
+  const insets = useSafeAreaInsets();
 
   const todayISO = isoDate(new Date());
 
@@ -114,7 +116,7 @@ export default function WeekScreen() {
   return (
     <View style={s.container}>
       {/* ── Week navigation header ── */}
-      <View style={s.weekNav}>
+      <View style={[s.weekNav, { paddingTop: (insets.top || (Platform.OS === 'ios' ? 44 : 16)) + 12 }]}>
         <TouchableOpacity
           style={s.navBtn}
           onPress={() => setWeekOffset(o => o - 1)}
@@ -229,7 +231,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 56 : 20,
     paddingBottom: 12,
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
