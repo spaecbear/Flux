@@ -323,15 +323,14 @@ const s = StyleSheet.create({
   monthLabel: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary, minWidth: 140, textAlign: 'center' },
   dayLabels: { flexDirection: 'row', marginBottom: 4 },
   dayLabel: { flex: 1, textAlign: 'center', fontSize: 11, color: COLORS.textMuted, fontWeight: '600', letterSpacing: 0.5 },
-  grid: { flexDirection: 'column' },
-  row: { flexDirection: 'row' },
-  // Cells use flex:1 + aspectRatio so they fill the row width and stay square
+  // Grid fills all remaining vertical space; rows split that space equally;
+  // cells fill each row — no fixed sizes, so the calendar grows with the device.
+  grid: { flex: 1, flexDirection: 'column' },
+  row: { flex: 1, flexDirection: 'row' },
   cell: {
     flex: 1,
-    aspectRatio: 1,
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: 6,
+    justifyContent: 'center',
     borderRadius: 8,
   },
   cellSelected: { backgroundColor: COLORS.surfaceHigh },
