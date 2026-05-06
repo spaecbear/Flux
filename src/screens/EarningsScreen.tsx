@@ -116,7 +116,7 @@ export default function EarningsScreen() {
         onClose={() => setPickerVisible(false)}
       />
 
-      <ScrollView contentContainerStyle={s.content}>
+      <ScrollView style={s.scrollView} contentContainerStyle={s.content}>
         {jobsWithRate.length === 0 ? (
           <View style={s.empty}>
             <Text style={s.emptyTitle}>No hourly rates set</Text>
@@ -177,6 +177,7 @@ export default function EarningsScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
+  scrollView: { flex: 1 },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,

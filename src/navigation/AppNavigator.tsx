@@ -51,13 +51,14 @@ function MainTabs() {
           backgroundColor: COLORS.surface,
           borderTopColor: COLORS.border,
           borderTopWidth: 1,
-          paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+          paddingBottom: Platform.OS === 'ios' ? 20 : 10,
           paddingTop: 8,
-          height: Platform.OS === 'ios' ? 82 : 60,
+          height: Platform.OS === 'ios' ? 82 : 68,
         },
         tabBarLabelStyle: {
           fontSize: 11,
           letterSpacing: 0.5,
+          marginBottom: 2,
         },
       })}
     >
