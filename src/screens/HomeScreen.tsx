@@ -8,7 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS } from '../constants/colors';
 import { useApp } from '../context/AppContext';
-import { datesWithConflicts, shiftsForDate, formatTimeRange } from '../utils/conflicts';
+import { datesWithConflicts, shiftsForDate, formatTimeRange, allShiftsInWindow } from '../utils/conflicts';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -99,7 +99,7 @@ function DayPanel({
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
-  const { jobs, shifts } = useApp();
+  const { jobs, shifts, recurringShifts } = useApp();
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -111,14 +111,22 @@ export default function HomeScreen() {
   const snapPoints = useMemo(() => ['42%', '72%'], []);
 
   const jobMap = useMemo(() => new Map(jobs.map(j => [j.id, j])), [jobs]);
-  const conflictDates = useMemo(() => datesWithConflicts(shifts), [shifts]);
   const rows = useMemo(() => getMonthGrid(year, month), [year, month]);
-
   const todayISO = toISODate(now.getFullYear(), now.getMonth(), now.getDate());
 
+  // Merge manual + recurring shifts for the visible month window
+  const monthFromISO = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const monthToISO   = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate().toString().padStart(2, '0')}`;
+  const allMonthShifts = useMemo(
+    () => allShiftsInWindow(shifts, recurringShifts, monthFromISO, monthToISO),
+    [shifts, recurringShifts, monthFromISO, monthToISO],
+  );
+
+  const conflictDates = useMemo(() => datesWithConflicts(allMonthShifts, jobs), [allMonthShifts, jobs]);
+
   const selectedShifts = useMemo(() =>
-    selectedDate ? shiftsForDate(shifts, selectedDate) : [],
-    [shifts, selectedDate]);
+    selectedDate ? shiftsForDate(allMonthShifts, selectedDate) : [],
+    [allMonthShifts, selectedDate]);
 
   const prevMonth = useCallback(() => {
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
@@ -225,7 +233,7 @@ export default function HomeScreen() {
                 const isToday = iso === todayISO;
                 const isSelected = iso === selectedDate;
                 const hasConflict = conflictDates.has(iso);
-                const dayShifts = shiftsForDate(shifts, iso);
+                const dayShifts = shiftsForDate(allMonthShifts, iso);
                 const dotColors = [...new Set(dayShifts.map(sv => jobMap.get(sv.jobId)?.color).filter(Boolean))];
 
                 return (

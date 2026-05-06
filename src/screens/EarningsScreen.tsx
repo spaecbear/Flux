@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { useApp } from '../context/AppContext';
-import { shiftDurationHours } from '../utils/conflicts';
+import { shiftDurationHours, allShiftsInWindow } from '../utils/conflicts';
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
 
@@ -69,7 +69,7 @@ function MonthPickerModal({
 }
 
 export default function EarningsScreen() {
-  const { jobs, shifts } = useApp();
+  const { jobs, shifts, recurringShifts } = useApp();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -78,18 +78,22 @@ export default function EarningsScreen() {
   const startISO = monthStart(year, month);
   const endISO = monthEnd(year, month);
 
+  // Merge manual + recurring for the selected month
+  const allShifts = useMemo(
+    () => allShiftsInWindow(shifts, recurringShifts, startISO, endISO),
+    [shifts, recurringShifts, startISO, endISO],
+  );
+
   const jobsWithRate = useMemo(() => jobs.filter(j => j.hourlyRate != null), [jobs]);
 
   const earnings = useMemo(() => {
     return jobsWithRate.map(job => {
-      const jobShifts = shifts.filter(
-        s => s.jobId === job.id && isoDateInRange(s.date, startISO, endISO),
-      );
+      const jobShifts = allShifts.filter(s => s.jobId === job.id);
       const totalHours = jobShifts.reduce((sum, s) => sum + shiftDurationHours(s), 0);
       const gross = totalHours * (job.hourlyRate ?? 0);
       return { job, totalHours, gross, shiftCount: jobShifts.length };
-    }).filter(e => e.shiftCount > 0 || true); // show all rated jobs even if no shifts
-  }, [jobsWithRate, shifts, startISO, endISO]);
+    });
+  }, [jobsWithRate, allShifts]);
 
   const totalHours = earnings.reduce((s, e) => s + e.totalHours, 0);
   const totalGross = earnings.reduce((s, e) => s + e.gross, 0);

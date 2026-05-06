@@ -1,47 +1,120 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, SafeAreaView, KeyboardAvoidingView, Platform,
+  ScrollView, SafeAreaView, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, PALETTE } from '../constants/colors';
 import { useApp } from '../context/AppContext';
+import TimePicker from '../components/TimePicker';
 import type { RootStackParamList } from '../navigation/AppNavigator';
-import type { JobType } from '../types';
+import type { JobType, RecurringShift } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'EditCommitment'>;
 
+const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const WEEKDAYS = [1, 2, 3, 4, 5];
+
+function pad(n: number) { return String(n).padStart(2, '0'); }
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function monthsLater(n: number) {
+  const d = new Date();
+  d.setMonth(d.getMonth() + n);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export default function EditCommitmentScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
-  const { jobs, saveJob } = useApp();
+  const { jobs, recurringShifts, saveJob, saveRecurringShift, removeRecurringShift } = useApp();
 
   const editingJob = route.params?.jobId
     ? jobs.find(j => j.id === route.params!.jobId)
     : undefined;
 
+  // Existing recurring rule for this job (at most one per job)
+  const existingRule = editingJob
+    ? recurringShifts.find(r => r.jobId === editingJob.id)
+    : undefined;
+
+  // ── Commitment fields ──────────────────────────────────────────────────────
   const [name, setName] = useState(editingJob?.name ?? '');
   const [color, setColor] = useState(editingJob?.color ?? PALETTE[0].hex);
   const [type, setType] = useState<JobType>(editingJob?.type ?? 'regular');
   const [hourlyRate, setHourlyRate] = useState(
     editingJob?.hourlyRate != null ? String(editingJob.hourlyRate) : '',
   );
+  const [ignoreOverlap, setIgnoreOverlap] = useState(editingJob?.ignoreOverlap ?? false);
   const [nameError, setNameError] = useState('');
+
+  // ── Recurring schedule fields ──────────────────────────────────────────────
+  const [recurringEnabled, setRecurringEnabled] = useState(!!existingRule);
+  const [selectedDays, setSelectedDays] = useState<number[]>(
+    existingRule?.daysOfWeek ?? WEEKDAYS,
+  );
+  const [recStartH, setRecStartH] = useState(() => {
+    const t = existingRule?.startTime ?? '09:00';
+    return parseInt(t.split(':')[0]);
+  });
+  const [recStartM, setRecStartM] = useState(() => {
+    const t = existingRule?.startTime ?? '09:00';
+    return parseInt(t.split(':')[1]);
+  });
+  const [recEndH, setRecEndH] = useState(() => {
+    const t = existingRule?.endTime ?? '17:00';
+    return parseInt(t.split(':')[0]);
+  });
+  const [recEndM, setRecEndM] = useState(() => {
+    const t = existingRule?.endTime ?? '17:00';
+    return parseInt(t.split(':')[1]);
+  });
+  const [recStartDate, setRecStartDate] = useState(existingRule?.startDate ?? todayISO());
+  const [recEndDate, setRecEndDate] = useState<string | null>(existingRule?.endDate ?? null);
+
+  function toggleDay(d: number) {
+    setSelectedDays(prev =>
+      prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort(),
+    );
+  }
 
   async function handleSave() {
     if (!name.trim()) { setNameError('Name is required'); return; }
     setNameError('');
 
     const rate = hourlyRate.trim() ? parseFloat(hourlyRate) : null;
+    const jobId = editingJob?.id ?? crypto.randomUUID();
+
     await saveJob({
-      id: editingJob?.id ?? crypto.randomUUID(),
+      id: jobId,
       name: name.trim(),
       color,
       type,
       hourlyRate: rate && !isNaN(rate) ? rate : null,
+      ignoreOverlap,
     });
+
+    if (recurringEnabled && selectedDays.length > 0) {
+      const rule: RecurringShift = {
+        id: existingRule?.id ?? crypto.randomUUID(),
+        jobId,
+        daysOfWeek: selectedDays,
+        startTime: `${pad(recStartH)}:${pad(recStartM)}`,
+        endTime: `${pad(recEndH)}:${pad(recEndM)}`,
+        startDate: recStartDate,
+        endDate: recEndDate,
+      };
+      await saveRecurringShift(rule);
+    } else if (!recurringEnabled && existingRule) {
+      await removeRecurringShift(existingRule.id);
+    }
+
     navigation.goBack();
   }
 
@@ -63,7 +136,7 @@ export default function EditCommitmentScreen() {
           />
           {!!nameError && <Text style={s.errorText}>{nameError}</Text>}
 
-          {/* Color picker */}
+          {/* Color */}
           <Text style={s.label}>COLOR</Text>
           <View style={s.colorGrid}>
             {PALETTE.map(p => (
@@ -72,13 +145,13 @@ export default function EditCommitmentScreen() {
                 style={[s.colorBtn, { backgroundColor: p.hex }, color === p.hex && s.colorBtnSelected]}
                 onPress={() => setColor(p.hex)}
               >
-                {color === p.hex && <Text style={s.colorCheckmark}>✓</Text>}
+                {color === p.hex && <Text style={s.colorCheck}>✓</Text>}
               </TouchableOpacity>
             ))}
           </View>
           <Text style={s.paletteName}>{PALETTE.find(p => p.hex === color)?.label}</Text>
 
-          {/* Type toggle */}
+          {/* Type */}
           <Text style={s.label}>TYPE</Text>
           <View style={s.toggle}>
             <TouchableOpacity
@@ -111,6 +184,115 @@ export default function EditCommitmentScreen() {
             <Text style={s.rateHr}>/hr</Text>
           </View>
 
+          {/* ── Conflict settings ─────────────────────────────────────────── */}
+          <View style={s.sectionDivider} />
+          <Text style={s.sectionTitle}>CONFLICT SETTINGS</Text>
+
+          <View style={s.switchRow}>
+            <View style={s.switchInfo}>
+              <Text style={s.switchLabel}>Ignore overlap warnings</Text>
+              <Text style={s.switchSubLabel}>
+                This commitment's shifts won't trigger conflict alerts
+              </Text>
+            </View>
+            <Switch
+              value={ignoreOverlap}
+              onValueChange={setIgnoreOverlap}
+              trackColor={{ false: COLORS.border, true: COLORS.accent + '88' }}
+              thumbColor={ignoreOverlap ? COLORS.accent : COLORS.textMuted}
+            />
+          </View>
+
+          {/* ── Recurring schedule ────────────────────────────────────────── */}
+          <View style={s.sectionDivider} />
+          <View style={s.recurringHeader}>
+            <Text style={s.sectionTitle}>RECURRING SCHEDULE</Text>
+            <Switch
+              value={recurringEnabled}
+              onValueChange={setRecurringEnabled}
+              trackColor={{ false: COLORS.border, true: COLORS.accent + '88' }}
+              thumbColor={recurringEnabled ? COLORS.accent : COLORS.textMuted}
+            />
+          </View>
+
+          {recurringEnabled && (
+            <>
+              {/* Day-of-week picker */}
+              <Text style={s.label}>DAYS</Text>
+              <View style={s.dayRow}>
+                {DAY_LABELS.map((d, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={[s.dayPill, selectedDays.includes(i) && s.dayPillSelected]}
+                    onPress={() => toggleDay(i)}
+                  >
+                    <Text style={[s.dayPillText, selectedDays.includes(i) && s.dayPillTextSelected]}>
+                      {d}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Quick-select presets */}
+              <View style={s.presetRow}>
+                {[
+                  { label: 'Weekdays', days: [1,2,3,4,5] },
+                  { label: 'Weekend', days: [0,6] },
+                  { label: 'MWF', days: [1,3,5] },
+                  { label: 'TR', days: [2,4] },
+                ].map(({ label: pl, days }) => (
+                  <TouchableOpacity
+                    key={pl}
+                    style={s.preset}
+                    onPress={() => setSelectedDays(days)}
+                  >
+                    <Text style={s.presetText}>{pl}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Times */}
+              <Text style={s.label}>SHIFT HOURS</Text>
+              <TimePicker label="Start" hour={recStartH} minute={recStartM}
+                onChange={(h, m) => { setRecStartH(h); setRecStartM(m); }} />
+              <TimePicker label="End" hour={recEndH} minute={recEndM}
+                onChange={(h, m) => { setRecEndH(h); setRecEndM(m); }} />
+
+              {/* Date range */}
+              <Text style={s.label}>DATE RANGE</Text>
+              <View style={s.dateRangeRow}>
+                <View style={s.dateField}>
+                  <Text style={s.dateFieldLabel}>From</Text>
+                  <Text style={s.dateFieldValue}>{recStartDate}</Text>
+                </View>
+                <Text style={s.dateArrow}>→</Text>
+                <View style={s.dateField}>
+                  <Text style={s.dateFieldLabel}>Until</Text>
+                  <Text style={s.dateFieldValue}>{recEndDate ?? 'Ongoing'}</Text>
+                </View>
+              </View>
+              <View style={s.endDatePresets}>
+                {[
+                  { label: 'Ongoing', value: null },
+                  { label: '1 month', value: monthsLater(1) },
+                  { label: '3 months', value: monthsLater(3) },
+                  { label: '6 months', value: monthsLater(6) },
+                  { label: '1 year', value: monthsLater(12) },
+                ].map(({ label: pl, value }) => (
+                  <TouchableOpacity
+                    key={pl}
+                    style={[s.preset, recEndDate === value && s.presetSelected]}
+                    onPress={() => setRecEndDate(value)}
+                  >
+                    <Text style={[s.presetText, recEndDate === value && s.presetTextSelected]}>
+                      {pl}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
           <TouchableOpacity style={s.saveBtn} onPress={handleSave} activeOpacity={0.85}>
             <Text style={s.saveBtnText}>
               {editingJob ? 'Save Changes' : 'Add Commitment'}
@@ -125,46 +307,78 @@ export default function EditCommitmentScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flex: 1 },
-  content: { padding: 20, paddingBottom: 48 },
+  content: { padding: 20, paddingBottom: 60 },
+
   label: {
     fontSize: 11, fontWeight: '700', color: COLORS.textMuted,
     letterSpacing: 1.5, marginTop: 24, marginBottom: 8,
   },
   optional: { color: COLORS.textMuted, fontWeight: '400', fontSize: 11 },
+
   input: {
-    backgroundColor: COLORS.surfaceHigh,
-    borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
+    backgroundColor: COLORS.surfaceHigh, borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 14,
     fontSize: 16, color: COLORS.textPrimary,
     borderWidth: 1, borderColor: 'transparent',
   },
   inputError: { borderColor: COLORS.conflict },
   errorText: { fontSize: 12, color: COLORS.conflict, marginTop: 4 },
+
   colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  colorBtn: {
-    width: 48, height: 48, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  colorBtnSelected: {
-    shadowColor: '#fff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  colorCheckmark: { fontSize: 20, color: '#000', fontWeight: '900' },
+  colorBtn: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  colorBtnSelected: { shadowColor: '#fff', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 6, elevation: 4 },
+  colorCheck: { fontSize: 20, color: '#000', fontWeight: '900' },
   paletteName: { fontSize: 12, color: COLORS.textMuted, marginTop: 8 },
-  toggle: {
-    flexDirection: 'row', backgroundColor: COLORS.surfaceHigh,
-    borderRadius: 12, padding: 4,
-  },
+
+  toggle: { flexDirection: 'row', backgroundColor: COLORS.surfaceHigh, borderRadius: 12, padding: 4 },
   toggleOption: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
   toggleOptionSelected: { backgroundColor: COLORS.surface },
   toggleText: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '600' },
   toggleTextSelected: { color: COLORS.textPrimary },
+
   rateRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   rateDollar: { fontSize: 20, color: COLORS.textSecondary, paddingLeft: 4 },
   rateInput: { flex: 1 },
   rateHr: { fontSize: 15, color: COLORS.textSecondary },
+
+  sectionDivider: { height: 1, backgroundColor: COLORS.border, marginTop: 28, marginBottom: 4 },
+  sectionTitle: { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 1.5, marginTop: 16, marginBottom: 4 },
+
+  switchRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 12 },
+  switchInfo: { flex: 1 },
+  switchLabel: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary },
+  switchSubLabel: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2, lineHeight: 17 },
+
+  recurringHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 },
+
+  dayRow: { flexDirection: 'row', gap: 6 },
+  dayPill: {
+    flex: 1, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: COLORS.surfaceHigh, alignItems: 'center',
+  },
+  dayPillSelected: { backgroundColor: COLORS.accent + '22', borderWidth: 1, borderColor: COLORS.accent },
+  dayPillText: { fontSize: 12, fontWeight: '600', color: COLORS.textMuted },
+  dayPillTextSelected: { color: COLORS.accent },
+
+  presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  endDatePresets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  preset: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 8, backgroundColor: COLORS.surfaceHigh,
+  },
+  presetSelected: { backgroundColor: COLORS.accent + '22', borderWidth: 1, borderColor: COLORS.accent },
+  presetText: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '500' },
+  presetTextSelected: { color: COLORS.accent, fontWeight: '700' },
+
+  dateRangeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
+  dateField: {
+    flex: 1, backgroundColor: COLORS.surfaceHigh,
+    borderRadius: 10, padding: 12,
+  },
+  dateFieldLabel: { fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 4 },
+  dateFieldValue: { fontSize: 14, color: COLORS.textPrimary, fontWeight: '600' },
+  dateArrow: { fontSize: 18, color: COLORS.textMuted },
+
   saveBtn: {
     marginTop: 36, backgroundColor: COLORS.accent,
     borderRadius: 14, paddingVertical: 16, alignItems: 'center',
