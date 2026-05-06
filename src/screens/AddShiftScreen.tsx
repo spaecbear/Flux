@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, Modal, SafeAreaView, TextInput, Platform,
+  Alert, Modal, TextInput, Platform, FlatList,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS } from '../constants/colors';
@@ -19,6 +20,16 @@ type Route = RouteProp<RootStackParamList, 'AddShift'>;
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
 function formatTime24(h: number, m: number) { return `${pad(h)}:${pad(m)}`; }
+
+/** Single-button alert that works on both native and web (RN Web stubs Alert). */
+function showAlert(msg: string) {
+  if (Platform.OS === 'web') {
+    // eslint-disable-next-line no-alert
+    (globalThis as any).alert?.(msg);
+  } else {
+    Alert.alert(msg);
+  }
+}
 
 function todayISO() {
   const d = new Date();
@@ -43,18 +54,21 @@ function isoToShort(iso: string) {
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+const ITEM_HEIGHT = 44;
+
 function DatePickerField({ date, onChange, rangeStart, rangeEnd }: {
   date: string; onChange: (d: string) => void;
   rangeStart?: number; rangeEnd?: number;
 }) {
   const [visible, setVisible] = useState(false);
   const [tempDate, setTempDate] = useState(date);
+  const listRef = useRef<FlatList<string>>(null);
 
   const dates = useMemo(() => {
     const result: string[] = [];
     const d = new Date();
     d.setHours(0, 0, 0, 0);
-    const start = rangeStart ?? -30;
+    const start = rangeStart ?? -365;
     const end = rangeEnd ?? 90;
     for (let i = start; i <= end; i++) {
       const dt = new Date(d);
@@ -64,9 +78,21 @@ function DatePickerField({ date, onChange, rangeStart, rangeEnd }: {
     return result;
   }, [rangeStart, rangeEnd]);
 
+  function open() {
+    setTempDate(date);
+    setVisible(true);
+    // Scroll to selected date after modal is visible
+    const idx = dates.indexOf(date);
+    if (idx >= 0) {
+      setTimeout(() => {
+        listRef.current?.scrollToIndex({ index: idx, animated: false, viewPosition: 0.4 });
+      }, 80);
+    }
+  }
+
   return (
     <>
-      <TouchableOpacity style={s.pickerField} onPress={() => { setTempDate(date); setVisible(true); }}>
+      <TouchableOpacity style={s.pickerField} onPress={open}>
         <Text style={s.pickerLabel}>Date</Text>
         <Text style={s.pickerValue}>{isoToDisplay(date)}</Text>
       </TouchableOpacity>
@@ -74,19 +100,32 @@ function DatePickerField({ date, onChange, rangeStart, rangeEnd }: {
         <View style={s.modalOverlay}>
           <View style={s.modalCard}>
             <Text style={s.modalTitle}>Select Date</Text>
-            <ScrollView style={{ maxHeight: 280 }}>
-              {dates.map(d => (
+            <FlatList
+              ref={listRef}
+              data={dates}
+              keyExtractor={d => d}
+              style={{ maxHeight: 280 }}
+              getItemLayout={(_, index) => ({
+                length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index,
+              })}
+              onScrollToIndexFailed={({ index }) => {
+                // Fallback: scroll to nearest valid index
+                listRef.current?.scrollToIndex({
+                  index: Math.min(index, dates.length - 1),
+                  animated: false,
+                });
+              }}
+              renderItem={({ item: d }) => (
                 <TouchableOpacity
-                  key={d}
-                  style={[s.pickerItem, tempDate === d && s.pickerItemSelected]}
+                  style={[s.pickerItem, { height: ITEM_HEIGHT }, tempDate === d && s.pickerItemSelected]}
                   onPress={() => setTempDate(d)}
                 >
                   <Text style={[s.pickerItemText, tempDate === d && s.pickerItemTextSelected]}>
                     {isoToDisplay(d)}
                   </Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+              )}
+            />
             <View style={s.modalButtons}>
               <TouchableOpacity style={s.modalCancel} onPress={() => setVisible(false)}>
                 <Text style={s.modalCancelText}>Cancel</Text>
@@ -161,9 +200,9 @@ export default function AddShiftScreen() {
   }, [candidateShift, allShiftsOnDate, jobs]);
 
   async function handleSave(confirmConflict = false) {
-    if (!jobId) { Alert.alert('Select a commitment first'); return; }
+    if (!jobId) { showAlert('Select a commitment first.'); return; }
     if (formatTime24(startH, startM) >= formatTime24(endH, endM)) {
-      Alert.alert('End time must be after start time'); return;
+      showAlert('End time must be after start time.'); return;
     }
 
     if (conflicts.length > 0 && !confirmConflict) {
@@ -270,7 +309,7 @@ export default function AddShiftScreen() {
         </View>
 
         <Text style={s.sectionLabel}>DATE</Text>
-        <DatePickerField date={date} onChange={setDate} rangeStart={-30} rangeEnd={90} />
+        <DatePickerField date={date} onChange={setDate} rangeStart={-365} rangeEnd={90} />
 
         <Text style={s.sectionLabel}>TIME</Text>
         <TimePicker label="Start" hour={startH} minute={startM}
