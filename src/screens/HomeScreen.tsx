@@ -1,22 +1,20 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Pressable,
-  Dimensions, SafeAreaView, StatusBar,
+  SafeAreaView, StatusBar, Platform, Modal, ScrollView,
 } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS } from '../constants/colors';
 import { useApp } from '../context/AppContext';
 import { datesWithConflicts, shiftsForDate, formatTimeRange } from '../utils/conflicts';
 import type { RootStackParamList } from '../navigation/AppNavigator';
-import type { Shift } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CELL_SIZE = Math.floor((SCREEN_WIDTH - 32) / 7);
+const IS_WEB = Platform.OS === 'web';
 
 function toISODate(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -33,8 +31,71 @@ function getMonthGrid(year: number, month: number): (number | null)[][] {
   return rows;
 }
 
+function formatSheetDate(iso: string): string {
+  const [year, month, day] = iso.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
+
+// Web day-detail panel (replaces bottom sheet on web)
+function DayPanel({
+  visible, selectedDate, selectedShifts, jobMap, onClose, onAddShift, onShiftPress,
+}: {
+  visible: boolean;
+  selectedDate: string | null;
+  selectedShifts: ReturnType<typeof shiftsForDate>;
+  jobMap: Map<string, any>;
+  onClose: () => void;
+  onAddShift: () => void;
+  onShiftPress: (shiftId: string) => void;
+}) {
+  if (!visible || !selectedDate) return null;
+  return (
+    <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
+      <Pressable style={s.webOverlay} onPress={onClose}>
+        <Pressable style={s.webPanel} onPress={e => e.stopPropagation()}>
+          <View style={s.webPanelHandle} />
+          <View style={s.sheetHeader}>
+            <Text style={s.sheetDate}>{formatSheetDate(selectedDate)}</Text>
+            <TouchableOpacity style={s.sheetAddBtn} onPress={onAddShift}>
+              <Text style={s.sheetAddText}>+ Shift</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView>
+            {selectedShifts.length === 0 ? (
+              <Text style={s.emptyText}>No shifts scheduled</Text>
+            ) : (
+              selectedShifts.map(shift => {
+                const job = jobMap.get(shift.jobId);
+                if (!job) return null;
+                return (
+                  <TouchableOpacity
+                    key={shift.id}
+                    style={s.shiftCard}
+                    onPress={() => onShiftPress(shift.id)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[s.shiftColorBar, { backgroundColor: job.color }]} />
+                    <View style={s.shiftInfo}>
+                      <Text style={s.shiftJobName}>{job.name}</Text>
+                      <Text style={s.shiftTime}>{formatTimeRange(shift.startTime, shift.endTime)}</Text>
+                    </View>
+                    {shift.confirmedConflict && (
+                      <View style={s.conflictBadge}><Text style={s.conflictBadgeText}>!</Text></View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
@@ -44,9 +105,10 @@ export default function HomeScreen() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const sheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['40%', '70%'], []);
+  const snapPoints = useMemo(() => ['42%', '72%'], []);
 
   const jobMap = useMemo(() => new Map(jobs.map(j => [j.id, j])), [jobs]);
   const conflictDates = useMemo(() => datesWithConflicts(shifts), [shifts]);
@@ -71,152 +133,181 @@ export default function HomeScreen() {
   const onDayPress = useCallback((day: number) => {
     const iso = toISODate(year, month, day);
     setSelectedDate(iso);
-    sheetRef.current?.expand();
+    if (IS_WEB) {
+      setSheetOpen(true);
+    } else {
+      sheetRef.current?.expand();
+    }
   }, [year, month]);
+
+  const closeSheet = useCallback(() => {
+    setSheetOpen(false);
+    sheetRef.current?.close();
+  }, []);
 
   const renderBackdrop = useCallback(
     (props: any) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} />,
     [],
   );
 
+  const shiftContent = (
+    <>
+      <View style={s.sheetHeader}>
+        <Text style={s.sheetDate}>{selectedDate ? formatSheetDate(selectedDate) : ''}</Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('AddShift', { prefillDate: selectedDate ?? undefined })}
+          style={s.sheetAddBtn}
+        >
+          <Text style={s.sheetAddText}>+ Shift</Text>
+        </TouchableOpacity>
+      </View>
+      {selectedShifts.length === 0 ? (
+        <Text style={s.emptyText}>No shifts scheduled</Text>
+      ) : (
+        selectedShifts.map(shift => {
+          const job = jobMap.get(shift.jobId);
+          if (!job) return null;
+          return (
+            <TouchableOpacity
+              key={shift.id}
+              style={s.shiftCard}
+              onPress={() => navigation.navigate('AddShift', { shiftId: shift.id })}
+              activeOpacity={0.8}
+            >
+              <View style={[s.shiftColorBar, { backgroundColor: job.color }]} />
+              <View style={s.shiftInfo}>
+                <Text style={s.shiftJobName}>{job.name}</Text>
+                <Text style={s.shiftTime}>{formatTimeRange(shift.startTime, shift.endTime)}</Text>
+              </View>
+              {shift.confirmedConflict && (
+                <View style={s.conflictBadge}><Text style={s.conflictBadgeText}>!</Text></View>
+              )}
+            </TouchableOpacity>
+          );
+        })
+      )}
+    </>
+  );
+
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="light-content" />
 
-      {/* Header */}
-      <View style={s.header}>
-        <Text style={s.appTitle}>FLUX</Text>
-        <View style={s.monthNav}>
-          <TouchableOpacity onPress={prevMonth} style={s.navBtn} hitSlop={8}>
-            <Text style={s.navArrow}>‹</Text>
-          </TouchableOpacity>
-          <Text style={s.monthLabel}>{MONTH_NAMES[month]} {year}</Text>
-          <TouchableOpacity onPress={nextMonth} style={s.navBtn} hitSlop={8}>
-            <Text style={s.navArrow}>›</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Day labels */}
-      <View style={s.dayLabels}>
-        {DAY_LABELS.map(d => (
-          <Text key={d} style={s.dayLabel}>{d}</Text>
-        ))}
-      </View>
-
-      {/* Calendar grid */}
-      <View style={s.grid}>
-        {rows.map((row, ri) => (
-          <View key={ri} style={s.row}>
-            {row.map((day, ci) => {
-              if (!day) return <View key={ci} style={s.cell} />;
-              const iso = toISODate(year, month, day);
-              const isToday = iso === todayISO;
-              const isSelected = iso === selectedDate;
-              const hasConflict = conflictDates.has(iso);
-              const dayShifts = shiftsForDate(shifts, iso);
-              const dotColors = [...new Set(dayShifts.map(s => jobMap.get(s.jobId)?.color).filter(Boolean))];
-
-              return (
-                <Pressable
-                  key={ci}
-                  style={[s.cell, isSelected && s.cellSelected, isToday && !isSelected && s.cellToday]}
-                  onPress={() => onDayPress(day)}
-                >
-                  <Text style={[s.dayNum, isToday && s.dayNumToday, isSelected && s.dayNumSelected]}>
-                    {day}
-                  </Text>
-                  {dotColors.length > 0 && (
-                    <View style={s.dots}>
-                      {dotColors.slice(0, 4).map((color, i) => (
-                        <View key={i} style={[s.dot, { backgroundColor: color as string }]} />
-                      ))}
-                    </View>
-                  )}
-                  {hasConflict && <View style={s.conflictDot} />}
-                </Pressable>
-              );
-            })}
-          </View>
-        ))}
-      </View>
-
-      {/* FAB */}
-      <TouchableOpacity
-        style={s.fab}
-        onPress={() => navigation.navigate('AddShift', {})}
-        activeOpacity={0.85}
-      >
-        <Text style={s.fabText}>+</Text>
-      </TouchableOpacity>
-
-      {/* Day Bottom Sheet */}
-      <BottomSheet
-        ref={sheetRef}
-        index={-1}
-        snapPoints={snapPoints}
-        enablePanDownToClose
-        backdropComponent={renderBackdrop}
-        backgroundStyle={s.sheetBg}
-        handleIndicatorStyle={s.sheetHandle}
-      >
-        <BottomSheetView style={s.sheetContent}>
-          <View style={s.sheetHeader}>
-            <Text style={s.sheetDate}>{selectedDate ? formatSheetDate(selectedDate) : ''}</Text>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('AddShift', { prefillDate: selectedDate ?? undefined })}
-              style={s.sheetAddBtn}
-            >
-              <Text style={s.sheetAddText}>+ Shift</Text>
+      <View style={s.container}>
+        {/* Header */}
+        <View style={s.header}>
+          <Text style={s.appTitle}>FLUX</Text>
+          <View style={s.monthNav}>
+            <TouchableOpacity onPress={prevMonth} style={s.navBtn} hitSlop={8}>
+              <Text style={s.navArrow}>‹</Text>
+            </TouchableOpacity>
+            <Text style={s.monthLabel}>{MONTH_NAMES[month]} {year}</Text>
+            <TouchableOpacity onPress={nextMonth} style={s.navBtn} hitSlop={8}>
+              <Text style={s.navArrow}>›</Text>
             </TouchableOpacity>
           </View>
+        </View>
 
-          {selectedShifts.length === 0 ? (
-            <Text style={s.emptyText}>No shifts scheduled</Text>
-          ) : (
-            selectedShifts.map(shift => {
-              const job = jobMap.get(shift.jobId);
-              if (!job) return null;
-              return (
-                <TouchableOpacity
-                  key={shift.id}
-                  style={s.shiftCard}
-                  onPress={() => navigation.navigate('AddShift', { shiftId: shift.id })}
-                  activeOpacity={0.8}
-                >
-                  <View style={[s.shiftColorBar, { backgroundColor: job.color }]} />
-                  <View style={s.shiftInfo}>
-                    <Text style={s.shiftJobName}>{job.name}</Text>
-                    <Text style={s.shiftTime}>{formatTimeRange(shift.startTime, shift.endTime)}</Text>
-                  </View>
-                  {shift.confirmedConflict && (
-                    <View style={s.conflictBadge}>
-                      <Text style={s.conflictBadgeText}>!</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </BottomSheetView>
-      </BottomSheet>
+        {/* Day labels */}
+        <View style={s.dayLabels}>
+          {DAY_LABELS.map(d => (
+            <Text key={d} style={s.dayLabel}>{d}</Text>
+          ))}
+        </View>
+
+        {/* Calendar grid — uses flex so cells fill width naturally */}
+        <View style={s.grid}>
+          {rows.map((row, ri) => (
+            <View key={ri} style={s.row}>
+              {row.map((day, ci) => {
+                if (!day) return <View key={ci} style={s.cell} />;
+                const iso = toISODate(year, month, day);
+                const isToday = iso === todayISO;
+                const isSelected = iso === selectedDate;
+                const hasConflict = conflictDates.has(iso);
+                const dayShifts = shiftsForDate(shifts, iso);
+                const dotColors = [...new Set(dayShifts.map(sv => jobMap.get(sv.jobId)?.color).filter(Boolean))];
+
+                return (
+                  <Pressable
+                    key={ci}
+                    style={[s.cell, isSelected && s.cellSelected, isToday && !isSelected && s.cellToday]}
+                    onPress={() => onDayPress(day)}
+                  >
+                    <Text style={[s.dayNum, isToday && s.dayNumToday, isSelected && s.dayNumSelected]}>
+                      {day}
+                    </Text>
+                    {dotColors.length > 0 && (
+                      <View style={s.dots}>
+                        {dotColors.slice(0, 4).map((color, i) => (
+                          <View key={i} style={[s.dot, { backgroundColor: color as string }]} />
+                        ))}
+                      </View>
+                    )}
+                    {hasConflict && <View style={s.conflictDot} />}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+
+        {/* FAB */}
+        <TouchableOpacity
+          style={s.fab}
+          onPress={() => navigation.navigate('AddShift', {})}
+          activeOpacity={0.85}
+        >
+          <Text style={s.fabText}>+</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Web: Modal panel */}
+      {IS_WEB && (
+        <DayPanel
+          visible={sheetOpen}
+          selectedDate={selectedDate}
+          selectedShifts={selectedShifts}
+          jobMap={jobMap}
+          onClose={closeSheet}
+          onAddShift={() => {
+            closeSheet();
+            navigation.navigate('AddShift', { prefillDate: selectedDate ?? undefined });
+          }}
+          onShiftPress={id => {
+            closeSheet();
+            navigation.navigate('AddShift', { shiftId: id });
+          }}
+        />
+      )}
+
+      {/* Native: Bottom sheet */}
+      {!IS_WEB && (
+        <BottomSheet
+          ref={sheetRef}
+          index={-1}
+          snapPoints={snapPoints}
+          enablePanDownToClose
+          backdropComponent={renderBackdrop}
+          backgroundStyle={s.sheetBg}
+          handleIndicatorStyle={s.sheetHandle}
+        >
+          <BottomSheetView style={s.sheetContent}>
+            {shiftContent}
+          </BottomSheetView>
+        </BottomSheet>
+      )}
     </SafeAreaView>
   );
 }
 
-function formatSheetDate(iso: string): string {
-  const [year, month, day] = iso.split('-').map(Number);
-  const d = new Date(year, month - 1, day);
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-}
-
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, paddingHorizontal: 16 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 16,
   },
@@ -230,13 +321,14 @@ const s = StyleSheet.create({
   navBtn: { padding: 4 },
   navArrow: { fontSize: 24, color: COLORS.textPrimary, lineHeight: 28 },
   monthLabel: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary, minWidth: 140, textAlign: 'center' },
-  dayLabels: { flexDirection: 'row', paddingHorizontal: 16, marginBottom: 4 },
-  dayLabel: { width: CELL_SIZE, textAlign: 'center', fontSize: 11, color: COLORS.textMuted, fontWeight: '600', letterSpacing: 0.5 },
-  grid: { paddingHorizontal: 16 },
+  dayLabels: { flexDirection: 'row', marginBottom: 4 },
+  dayLabel: { flex: 1, textAlign: 'center', fontSize: 11, color: COLORS.textMuted, fontWeight: '600', letterSpacing: 0.5 },
+  grid: { flexDirection: 'column' },
   row: { flexDirection: 'row' },
+  // Cells use flex:1 + aspectRatio so they fill the row width and stay square
   cell: {
-    width: CELL_SIZE,
-    height: CELL_SIZE,
+    flex: 1,
+    aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'flex-start',
     paddingTop: 6,
@@ -247,17 +339,17 @@ const s = StyleSheet.create({
   dayNum: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '500' },
   dayNumToday: { color: COLORS.accent, fontWeight: '700' },
   dayNumSelected: { color: COLORS.textPrimary },
-  dots: { flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginTop: 3, justifyContent: 'center', maxWidth: CELL_SIZE - 8 },
+  dots: { flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginTop: 3, justifyContent: 'center' },
   dot: { width: 5, height: 5, borderRadius: 2.5 },
   conflictDot: {
     width: 5, height: 5, borderRadius: 2.5,
     backgroundColor: COLORS.conflict,
-    position: 'absolute', top: 4, right: 6,
+    position: 'absolute', top: 4, right: 4,
   },
   fab: {
     position: 'absolute',
-    bottom: 100,
-    right: 20,
+    bottom: 24,
+    right: 4,
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -271,9 +363,31 @@ const s = StyleSheet.create({
     elevation: 8,
   },
   fabText: { fontSize: 28, color: COLORS.background, fontWeight: '300', lineHeight: 34 },
+  // Native bottom sheet
   sheetBg: { backgroundColor: COLORS.surface },
   sheetHandle: { backgroundColor: COLORS.border },
   sheetContent: { flex: 1, paddingHorizontal: 20, paddingTop: 4 },
+  // Web modal panel
+  webOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  webPanel: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 48,
+    maxHeight: '70%',
+  },
+  webPanelHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: COLORS.border,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  // Shared sheet content
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sheetDate: { fontSize: 17, fontWeight: '700', color: COLORS.textPrimary },
   sheetAddBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: COLORS.surfaceHigh },
@@ -297,5 +411,5 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginRight: 14,
   },
-  conflictBadgeText: { color: COLORS.white, fontSize: 13, fontWeight: '800' },
+  conflictBadgeText: { color: '#fff', fontSize: 13, fontWeight: '800' },
 });

@@ -14,19 +14,23 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 function JobRow({ job, onPress, onDelete }: { job: Job; onPress: () => void; onDelete: () => void }) {
   return (
-    <TouchableOpacity style={s.row} onPress={onPress} activeOpacity={0.8}>
-      <View style={[s.colorSwatch, { backgroundColor: job.color }]} />
-      <View style={s.rowInfo}>
-        <Text style={s.jobName}>{job.name}</Text>
-        <Text style={s.jobMeta}>
-          {job.type === 'gig' ? 'Gig' : 'Regular'}
-          {job.hourlyRate != null ? ` · $${job.hourlyRate}/hr` : ''}
-        </Text>
-      </View>
-      <TouchableOpacity style={s.deleteBtn} onPress={onDelete} hitSlop={8}>
+    <View style={s.row}>
+      {/* Tapping the swatch + info area opens the edit screen */}
+      <TouchableOpacity style={s.rowEditArea} onPress={onPress} activeOpacity={0.7}>
+        <View style={[s.colorSwatch, { backgroundColor: job.color }]} />
+        <View style={s.rowInfo}>
+          <Text style={s.jobName} numberOfLines={1}>{job.name}</Text>
+          <Text style={s.jobMeta} numberOfLines={1}>
+            {job.type === 'gig' ? 'Gig' : 'Regular'}
+            {job.hourlyRate != null ? ` · $${job.hourlyRate}/hr` : ''}
+          </Text>
+        </View>
+      </TouchableOpacity>
+      {/* Delete sits outside the edit touchable so both work independently */}
+      <TouchableOpacity style={s.deleteBtn} onPress={onDelete} hitSlop={12}>
         <Text style={s.deleteBtnText}>✕</Text>
       </TouchableOpacity>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -102,15 +106,24 @@ const s = StyleSheet.create({
   addBtnText: { fontSize: 14, color: COLORS.accent, fontWeight: '700' },
   list: { paddingHorizontal: 20, paddingBottom: 40 },
   row: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: COLORS.surface,
-    borderRadius: 14, padding: 16, gap: 14,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  rowEditArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 14,
   },
   colorSwatch: { width: 40, height: 40, borderRadius: 10 },
   rowInfo: { flex: 1 },
   jobName: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 2 },
   jobMeta: { fontSize: 13, color: COLORS.textSecondary },
-  deleteBtn: { padding: 4 },
+  deleteBtn: { paddingHorizontal: 16, paddingVertical: 20 },
   deleteBtnText: { fontSize: 16, color: COLORS.textMuted },
   separator: { height: 8 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
