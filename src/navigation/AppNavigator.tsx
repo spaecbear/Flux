@@ -2,7 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, Platform } from 'react-native';
+import { Text, View, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/colors';
 
@@ -29,44 +29,54 @@ export type TabParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
-function TabIcon({ name, focused }: { name: string; focused: boolean }) {
-  const icons: Record<string, string> = {
-    Home: '◉',
-    Week: '▦',
-    Commitments: '⬡',
-    Earnings: '◈',
-  };
+const TAB_ICONS: Record<string, string> = {
+  Home: '◉',
+  Week: '▦',
+  Commitments: '⬡',
+  Earnings: '◈',
+};
+
+const TAB_LABELS: Record<string, string> = {
+  Home: 'HOME',
+  Week: 'WEEK',
+  Commitments: 'JOBS',
+  Earnings: 'PAY',
+};
+
+function TabIcon({ name, focused, color }: { name: string; focused: boolean; color: string }) {
   return (
-    <Text style={{ fontSize: 18, opacity: focused ? 1 : 0.4 }}>
-      {icons[name]}
-    </Text>
+    <View style={{ alignItems: 'center', gap: 3 }}>
+      <Text style={{ fontSize: 18, color, opacity: focused ? 1 : 0.45, lineHeight: 22 }}>
+        {TAB_ICONS[name]}
+      </Text>
+      <Text
+        numberOfLines={1}
+        style={{ fontSize: 10, color, opacity: focused ? 1 : 0.45, letterSpacing: 0.8, lineHeight: 13 }}
+      >
+        {TAB_LABELS[name]}
+      </Text>
+    </View>
   );
 }
 
 function MainTabs() {
   const insets = useSafeAreaInsets();
-  const bottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 8 : 6);
-  const tabBarHeight = 48 + bottomPad;
 
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,
+        tabBarShowLabel: false,
+        tabBarIcon: ({ focused, color }) => <TabIcon name={route.name} focused={focused} color={color} />,
         tabBarActiveTintColor: COLORS.accent,
         tabBarInactiveTintColor: COLORS.textMuted,
         tabBarStyle: {
           backgroundColor: COLORS.surface,
           borderTopColor: COLORS.border,
           borderTopWidth: 1,
-          paddingBottom: bottomPad,
+          height: 60 + Math.max(insets.bottom, 0),
           paddingTop: 8,
-          height: tabBarHeight,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          letterSpacing: 0.5,
-          marginBottom: 2,
+          paddingBottom: Math.max(insets.bottom, 8),
         },
       })}
     >

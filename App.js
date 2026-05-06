@@ -1,4 +1,5 @@
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StyleSheet } from 'react-native';
 import { AppProvider } from './src/context/AppContext';
 import AppNavigator from './src/navigation/AppNavigator';
@@ -12,9 +13,11 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <AppProvider>
-        <AppNavigator />
-      </AppProvider>
+      <SafeAreaProvider>
+        <AppProvider>
+          <AppNavigator />
+        </AppProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
