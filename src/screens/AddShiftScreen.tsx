@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, Modal, SafeAreaView,
+  Alert, Modal, SafeAreaView, TextInput, Platform,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -11,7 +11,8 @@ import { findConflicts, formatTimeRange, allShiftsInWindow } from '../utils/conf
 import { sendConflictNotification } from '../utils/notifications';
 import TimePicker from '../components/TimePicker';
 import type { RootStackParamList } from '../navigation/AppNavigator';
-import type { Shift } from '../types';
+import type { Shift, GigPayment } from '../types';
+import { isoDate } from '../utils/payday';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AddShift'>;
@@ -24,6 +25,12 @@ function todayISO() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+function weeksOut(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + n * 7);
+  return isoDate(d);
+}
+
 function isoToDisplay(iso: string) {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-US', {
@@ -31,7 +38,15 @@ function isoToDisplay(iso: string) {
   });
 }
 
-function DatePickerField({ date, onChange }: { date: string; onChange: (d: string) => void }) {
+function isoToShort(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function DatePickerField({ date, onChange, rangeStart, rangeEnd }: {
+  date: string; onChange: (d: string) => void;
+  rangeStart?: number; rangeEnd?: number;
+}) {
   const [visible, setVisible] = useState(false);
   const [tempDate, setTempDate] = useState(date);
 
@@ -39,13 +54,15 @@ function DatePickerField({ date, onChange }: { date: string; onChange: (d: strin
     const result: string[] = [];
     const d = new Date();
     d.setHours(0, 0, 0, 0);
-    for (let i = -30; i <= 90; i++) {
+    const start = rangeStart ?? -30;
+    const end = rangeEnd ?? 90;
+    for (let i = start; i <= end; i++) {
       const dt = new Date(d);
       dt.setDate(d.getDate() + i);
-      result.push(`${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`);
+      result.push(isoDate(dt));
     }
     return result;
-  }, []);
+  }, [rangeStart, rangeEnd]);
 
   return (
     <>
@@ -88,7 +105,7 @@ function DatePickerField({ date, onChange }: { date: string; onChange: (d: strin
 export default function AddShiftScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
-  const { jobs, shifts, recurringShifts, saveShift, removeShift } = useApp();
+  const { jobs, shifts, recurringShifts, gigPayments, saveShift, removeShift, saveGigPayment, removeGigPayment } = useApp();
 
   const editingShift = route.params?.shiftId
     ? shifts.find(s => s.id === route.params!.shiftId)
@@ -103,6 +120,28 @@ export default function AddShiftScreen() {
 
   const [conflicts, setConflicts] = useState<ReturnType<typeof findConflicts>>([]);
 
+  // ── Expected payment (gig jobs only) ─────────────────────────────────────
+  const selectedJob = useMemo(() => jobs.find(j => j.id === jobId), [jobs, jobId]);
+  const isGig = selectedJob?.type === 'gig';
+
+  // Find existing payment linked to this shift (when editing)
+  const existingPayment = useMemo(
+    () => editingShift ? gigPayments.find(p => p.shiftId === editingShift.id) : undefined,
+    [editingShift, gigPayments],
+  );
+
+  const [paymentEnabled, setPaymentEnabled] = useState(!!existingPayment);
+  const [payAmount, setPayAmount] = useState(existingPayment?.amount != null ? String(existingPayment.amount) : '');
+  const [payDate, setPayDate] = useState(existingPayment?.expectedDate ?? weeksOut(2));
+  const [payDesc, setPayDesc] = useState(existingPayment?.description ?? '');
+
+  // Reset payment fields when switching jobs
+  useEffect(() => {
+    if (!isGig) {
+      setPaymentEnabled(false);
+    }
+  }, [isGig]);
+
   const candidateShift: Shift = useMemo(() => ({
     id: editingShift?.id ?? '__preview__',
     jobId,
@@ -112,7 +151,6 @@ export default function AddShiftScreen() {
     confirmedConflict: false,
   }), [jobId, date, startH, startM, endH, endM, editingShift]);
 
-  // Merge recurring shifts for the candidate date before conflict check
   const allShiftsOnDate = useMemo(
     () => allShiftsInWindow(shifts, recurringShifts, date, date),
     [shifts, recurringShifts, date],
@@ -137,6 +175,13 @@ export default function AddShiftScreen() {
         conflictJob.name,
       ).catch(() => {});
 
+      if (Platform.OS === 'web') {
+        // eslint-disable-next-line no-alert
+        if ((globalThis as any).confirm?.(
+          `Schedule conflict: overlaps with ${conflictJob.name} (${formatTimeRange(conflictShift.startTime, conflictShift.endTime)}). Save anyway?`
+        )) handleSave(true);
+        return;
+      }
       Alert.alert(
         'Schedule Conflict',
         `Overlaps with ${conflictJob.name} (${formatTimeRange(conflictShift.startTime, conflictShift.endTime)})`,
@@ -148,24 +193,51 @@ export default function AddShiftScreen() {
       return;
     }
 
+    const shiftId = editingShift?.id ?? crypto.randomUUID();
+
     await saveShift({
-      id: editingShift?.id ?? crypto.randomUUID(),
+      id: shiftId,
       jobId, date,
       startTime: formatTime24(startH, startM),
       endTime: formatTime24(endH, endM),
       confirmedConflict: confirmConflict,
     });
+
+    // Handle gig payment
+    if (isGig && paymentEnabled) {
+      const amt = parseFloat(payAmount);
+      if (!isNaN(amt) && amt > 0) {
+        await saveGigPayment({
+          id: existingPayment?.id ?? crypto.randomUUID(),
+          jobId,
+          shiftId,
+          expectedDate: payDate,
+          amount: amt,
+          description: payDesc.trim(),
+        });
+      }
+    } else if (existingPayment && (!isGig || !paymentEnabled)) {
+      await removeGigPayment(existingPayment.id);
+    }
+
     navigation.goBack();
   }
 
   async function handleDelete() {
     if (!editingShift) return;
+    const doDelete = async () => {
+      await removeShift(editingShift.id);
+      navigation.goBack();
+    };
+    if (Platform.OS === 'web') {
+      // Alert.alert is a no-op on RN Web — use native browser confirm
+      // eslint-disable-next-line no-alert
+      if ((globalThis as any).confirm?.('Delete this shift?')) await doDelete();
+      return;
+    }
     Alert.alert('Delete Shift', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        await removeShift(editingShift.id);
-        navigation.goBack();
-      }},
+      { text: 'Delete', style: 'destructive', onPress: doDelete },
     ]);
   }
 
@@ -186,6 +258,9 @@ export default function AddShiftScreen() {
               >
                 <View style={[s.jobDot, { backgroundColor: job.color }]} />
                 <Text style={[s.jobChipText, jobId === job.id && { color: job.color }]}>{job.name}</Text>
+                {job.type === 'gig' && (
+                  <Text style={s.gigBadge}>gig</Text>
+                )}
                 {job.ignoreOverlap && (
                   <Text style={s.ignoreBadge}>no flags</Text>
                 )}
@@ -195,7 +270,7 @@ export default function AddShiftScreen() {
         </View>
 
         <Text style={s.sectionLabel}>DATE</Text>
-        <DatePickerField date={date} onChange={setDate} />
+        <DatePickerField date={date} onChange={setDate} rangeStart={-30} rangeEnd={90} />
 
         <Text style={s.sectionLabel}>TIME</Text>
         <TimePicker label="Start" hour={startH} minute={startM}
@@ -212,6 +287,80 @@ export default function AddShiftScreen() {
               </Text>
             ))}
           </View>
+        )}
+
+        {/* ── Expected payment (gig jobs only) ─────────────────────────── */}
+        {isGig && (
+          <>
+            <View style={s.paymentHeader}>
+              <Text style={[s.sectionLabel, { marginTop: 0 }]}>EXPECTED PAYMENT</Text>
+              <TouchableOpacity
+                style={[s.paymentToggle, paymentEnabled && s.paymentToggleOn]}
+                onPress={() => setPaymentEnabled(v => !v)}
+              >
+                <Text style={[s.paymentToggleText, paymentEnabled && s.paymentToggleTextOn]}>
+                  {paymentEnabled ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {paymentEnabled && (
+              <View style={s.paymentForm}>
+                <View style={s.amountRow}>
+                  <Text style={s.amountDollar}>$</Text>
+                  <TextInput
+                    style={s.amountInput}
+                    value={payAmount}
+                    onChangeText={setPayAmount}
+                    placeholder="0.00"
+                    placeholderTextColor={COLORS.textMuted}
+                    keyboardType="decimal-pad"
+                    returnKeyType="done"
+                  />
+                </View>
+
+                <View style={s.payDateRow}>
+                  <Text style={s.payDateLabel}>Expected by</Text>
+                  <View style={s.payDatePresets}>
+                    {[
+                      { label: '1 wk', n: 1 },
+                      { label: '2 wks', n: 2 },
+                      { label: '30 days', n: 4 },
+                    ].map(({ label, n }) => {
+                      const val = weeksOut(n);
+                      return (
+                        <TouchableOpacity
+                          key={label}
+                          style={[s.payPreset, payDate === val && s.payPresetSelected]}
+                          onPress={() => setPayDate(val)}
+                        >
+                          <Text style={[s.payPresetText, payDate === val && s.payPresetTextSelected]}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={s.payDateField}
+                  onPress={() => {}}
+                >
+                  <DatePickerField date={payDate} onChange={setPayDate} rangeStart={0} rangeEnd={180} />
+                </TouchableOpacity>
+
+                <TextInput
+                  style={[s.descInput, { marginTop: 8 }]}
+                  value={payDesc}
+                  onChangeText={setPayDesc}
+                  placeholder="Description (optional)"
+                  placeholderTextColor={COLORS.textMuted}
+                  returnKeyType="done"
+                />
+              </View>
+            )}
+          </>
         )}
 
         <TouchableOpacity style={s.saveBtn} onPress={() => handleSave()} activeOpacity={0.85}>
@@ -246,6 +395,11 @@ const s = StyleSheet.create({
   jobChipSelected: { backgroundColor: COLORS.surface },
   jobDot: { width: 8, height: 8, borderRadius: 4 },
   jobChipText: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '500' },
+  gigBadge: {
+    fontSize: 10, color: COLORS.accent,
+    backgroundColor: COLORS.accent + '22', borderRadius: 4,
+    paddingHorizontal: 5, paddingVertical: 2,
+  },
   ignoreBadge: {
     fontSize: 10, color: COLORS.textMuted,
     backgroundColor: COLORS.surface, borderRadius: 4,
@@ -265,6 +419,46 @@ const s = StyleSheet.create({
   },
   conflictTitle: { fontSize: 14, fontWeight: '700', color: COLORS.conflict, marginBottom: 6 },
   conflictText: { fontSize: 13, color: COLORS.conflict + 'cc', lineHeight: 20 },
+
+  // Expected payment section
+  paymentHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 24, marginBottom: 8,
+  },
+  paymentToggle: {
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
+    backgroundColor: COLORS.surfaceHigh, borderWidth: 1, borderColor: COLORS.border,
+  },
+  paymentToggleOn: { backgroundColor: COLORS.accent + '22', borderColor: COLORS.accent },
+  paymentToggleText: { fontSize: 13, color: COLORS.textMuted, fontWeight: '600' },
+  paymentToggleTextOn: { color: COLORS.accent },
+  paymentForm: {
+    backgroundColor: COLORS.surfaceHigh, borderRadius: 14, padding: 16, gap: 0,
+  },
+  amountRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: COLORS.surface, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12,
+  },
+  amountDollar: { fontSize: 22, color: COLORS.textSecondary },
+  amountInput: { flex: 1, fontSize: 24, fontWeight: '700', color: COLORS.textPrimary },
+  payDateRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  payDateLabel: { fontSize: 13, color: COLORS.textSecondary },
+  payDatePresets: { flexDirection: 'row', gap: 8 },
+  payPreset: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+    backgroundColor: COLORS.surface,
+  },
+  payPresetSelected: { backgroundColor: COLORS.accent + '22', borderWidth: 1, borderColor: COLORS.accent },
+  payPresetText: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '500' },
+  payPresetTextSelected: { color: COLORS.accent, fontWeight: '700' },
+  payDateField: { marginBottom: 0 },
+  descInput: {
+    backgroundColor: COLORS.surface, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, color: COLORS.textPrimary,
+  },
+
   saveBtn: {
     marginTop: 32, backgroundColor: COLORS.accent,
     borderRadius: 14, paddingVertical: 16, alignItems: 'center',

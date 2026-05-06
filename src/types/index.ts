@@ -1,4 +1,10 @@
 export type JobType = 'regular' | 'gig';
+export type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
+
+export interface PaySchedule {
+  frequency: PayFrequency;
+  anchorDate: string; // YYYY-MM-DD — a confirmed recent payday
+}
 
 export interface Job {
   id: string;
@@ -7,6 +13,16 @@ export interface Job {
   type: JobType;
   hourlyRate: number | null;
   ignoreOverlap: boolean;
+  paySchedule: PaySchedule | null;
+}
+
+export interface GigPayment {
+  id: string;
+  jobId: string;
+  shiftId?: string;      // linked shift — payment is deleted when shift is deleted
+  expectedDate: string;  // YYYY-MM-DD
+  amount: number;
+  description: string;
 }
 
 export interface Shift {

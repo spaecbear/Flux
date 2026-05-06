@@ -5,6 +5,8 @@ import {
 import { COLORS } from '../constants/colors';
 import { useApp } from '../context/AppContext';
 import { shiftDurationHours, allShiftsInWindow } from '../utils/conflicts';
+import { getCurrentPeriod, formatPeriod, isoDate } from '../utils/payday';
+import { buildCSV, exportCSV } from '../utils/exportCSV';
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
 
@@ -13,16 +15,17 @@ function monthLabel(year: number, month: number) {
   return `${names[month]} ${year}`;
 }
 
-function isoDateInRange(iso: string, startISO: string, endISO: string) {
-  return iso >= startISO && iso <= endISO;
-}
-
 function monthStart(y: number, m: number) {
   return `${y}-${pad(m + 1)}-01`;
 }
 function monthEnd(y: number, m: number) {
   const lastDay = new Date(y, m + 1, 0).getDate();
   return `${y}-${pad(m + 1)}-${pad(lastDay)}`;
+}
+
+function shortDate(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function MonthPickerModal({
@@ -69,8 +72,9 @@ function MonthPickerModal({
 }
 
 export default function EarningsScreen() {
-  const { jobs, shifts, recurringShifts } = useApp();
+  const { jobs, shifts, recurringShifts, gigPayments } = useApp();
   const now = new Date();
+  const todayISO = isoDate(now);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -78,34 +82,80 @@ export default function EarningsScreen() {
   const startISO = monthStart(year, month);
   const endISO = monthEnd(year, month);
 
-  // Merge manual + recurring for the selected month
-  const allShifts = useMemo(
+  const allMonthShifts = useMemo(
     () => allShiftsInWindow(shifts, recurringShifts, startISO, endISO),
     [shifts, recurringShifts, startISO, endISO],
   );
 
   const jobsWithRate = useMemo(() => jobs.filter(j => j.hourlyRate != null), [jobs]);
 
-  const earnings = useMemo(() => {
+  // ── Monthly earnings per job ──────────────────────────────────────────────
+  const monthlyEarnings = useMemo(() => {
     return jobsWithRate.map(job => {
-      const jobShifts = allShifts.filter(s => s.jobId === job.id);
+      const jobShifts = allMonthShifts.filter(s => s.jobId === job.id);
       const totalHours = jobShifts.reduce((sum, s) => sum + shiftDurationHours(s), 0);
       const gross = totalHours * (job.hourlyRate ?? 0);
       return { job, totalHours, gross, shiftCount: jobShifts.length };
     });
-  }, [jobsWithRate, allShifts]);
+  }, [jobsWithRate, allMonthShifts]);
 
-  const totalHours = earnings.reduce((s, e) => s + e.totalHours, 0);
-  const totalGross = earnings.reduce((s, e) => s + e.gross, 0);
+  const totalHours = monthlyEarnings.reduce((s, e) => s + e.totalHours, 0);
+  const totalGross = monthlyEarnings.reduce((s, e) => s + e.gross, 0);
+
+  // ── Current pay period per regular job ────────────────────────────────────
+  const payPeriodJobs = useMemo(() => {
+    return jobs.filter(j => j.type === 'regular' && j.paySchedule && j.hourlyRate != null);
+  }, [jobs]);
+
+  const payPeriodData = useMemo(() => {
+    return payPeriodJobs.map(job => {
+      const period = getCurrentPeriod(job.paySchedule!, todayISO);
+      const periodShifts = allShiftsInWindow(shifts, recurringShifts, period.start, period.end);
+      const jobShifts = periodShifts.filter(s => s.jobId === job.id);
+      const totalHours = jobShifts.reduce((sum, s) => sum + shiftDurationHours(s), 0);
+      const gross = totalHours * (job.hourlyRate ?? 0);
+      return { job, period, totalHours, gross, shiftCount: jobShifts.length };
+    });
+  }, [payPeriodJobs, shifts, recurringShifts, todayISO]);
+
+  // ── Gig payments split by past/upcoming ───────────────────────────────────
+  const gigJobsWithPayments = useMemo(() => {
+    return jobs
+      .filter(j => j.type === 'gig')
+      .map(job => {
+        const payments = gigPayments
+          .filter(p => p.jobId === job.id)
+          .sort((a, b) => a.expectedDate.localeCompare(b.expectedDate));
+        const recent = payments.filter(p => p.expectedDate < todayISO);
+        const upcoming = payments.filter(p => p.expectedDate >= todayISO);
+        return { job, recent, upcoming };
+      })
+      .filter(({ recent, upcoming }) => recent.length > 0 || upcoming.length > 0);
+  }, [jobs, gigPayments, todayISO]);
+
+  const hasPayPeriodData = payPeriodData.length > 0;
+  const hasGigPayments = gigJobsWithPayments.length > 0;
+
+  function handleExport() {
+    const label = monthLabel(year, month);
+    const csv = buildCSV(allMonthShifts, jobs, label);
+    const filename = `flux-earnings-${year}-${pad(month + 1)}.csv`;
+    exportCSV(csv, filename).catch(() => {});
+  }
 
   return (
     <SafeAreaView style={s.safe}>
       <View style={s.header}>
         <Text style={s.title}>Earnings</Text>
-        <TouchableOpacity style={s.monthBtn} onPress={() => setPickerVisible(true)}>
-          <Text style={s.monthBtnText}>{monthLabel(year, month)}</Text>
-          <Text style={s.monthBtnChevron}>▾</Text>
-        </TouchableOpacity>
+        <View style={s.headerRight}>
+          <TouchableOpacity style={s.exportBtn} onPress={handleExport}>
+            <Text style={s.exportBtnText}>↑ CSV</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.monthBtn} onPress={() => setPickerVisible(true)}>
+            <Text style={s.monthBtnText}>{monthLabel(year, month)}</Text>
+            <Text style={s.monthBtnChevron}>▾</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <MonthPickerModal
@@ -117,16 +167,104 @@ export default function EarningsScreen() {
       />
 
       <ScrollView style={s.scrollView} contentContainerStyle={s.content}>
+
+        {/* ── Current pay periods ─────────────────────────────────────────── */}
+        {hasPayPeriodData && (
+          <>
+            <Text style={s.sectionHeader}>CURRENT PAY PERIOD</Text>
+            {payPeriodData.map(({ job, period, totalHours, gross, shiftCount }) => (
+              <View key={job.id} style={[s.card, s.periodCard]}>
+                <View style={s.cardHeader}>
+                  <View style={[s.colorDot, { backgroundColor: job.color }]} />
+                  <Text style={s.cardJobName}>{job.name}</Text>
+                  <Text style={s.periodRange}>{formatPeriod(period.start, period.end)}</Text>
+                </View>
+                <View style={s.cardStats}>
+                  <View style={s.stat}>
+                    <Text style={s.statValue}>{totalHours.toFixed(1)}</Text>
+                    <Text style={s.statLabel}>hours</Text>
+                  </View>
+                  <View style={s.statDivider} />
+                  <View style={s.stat}>
+                    <Text style={s.statValue}>{shiftCount}</Text>
+                    <Text style={s.statLabel}>shifts</Text>
+                  </View>
+                  <View style={s.statDivider} />
+                  <View style={s.stat}>
+                    <Text style={[s.statValue, s.earnValue]}>${gross.toFixed(2)}</Text>
+                    <Text style={s.statLabel}>est. gross</Text>
+                  </View>
+                </View>
+                <Text style={s.paydayLabel}>
+                  Payday: <Text style={s.paydayDate}>{shortDate(period.end)}</Text>
+                </Text>
+              </View>
+            ))}
+          </>
+        )}
+
+        {/* ── Gig payments ────────────────────────────────────────────────── */}
+        {hasGigPayments && (
+          <>
+            <Text style={s.sectionHeader}>GIG PAYMENTS</Text>
+            {gigJobsWithPayments.map(({ job, recent, upcoming }) => (
+              <View key={job.id} style={s.card}>
+                <View style={s.cardHeader}>
+                  <View style={[s.colorDot, { backgroundColor: job.color }]} />
+                  <Text style={s.cardJobName}>{job.name}</Text>
+                </View>
+
+                {upcoming.length > 0 && (
+                  <>
+                    <Text style={s.gigGroupLabel}>UPCOMING</Text>
+                    {upcoming.map(p => (
+                      <View key={p.id} style={s.gigPaymentRow}>
+                        <View>
+                          <Text style={s.gigPaymentDate}>{shortDate(p.expectedDate)}</Text>
+                          {!!p.description && <Text style={s.gigPaymentDesc}>{p.description}</Text>}
+                        </View>
+                        <Text style={[s.gigPaymentAmount, s.earnValue]}>${p.amount.toFixed(2)}</Text>
+                      </View>
+                    ))}
+                  </>
+                )}
+
+                {recent.length > 0 && (
+                  <>
+                    <Text style={[s.gigGroupLabel, { marginTop: upcoming.length > 0 ? 12 : 0 }]}>RECENT</Text>
+                    {recent.map(p => (
+                      <View key={p.id} style={s.gigPaymentRow}>
+                        <View>
+                          <Text style={[s.gigPaymentDate, s.recentDate]}>{shortDate(p.expectedDate)}</Text>
+                          {!!p.description && <Text style={s.gigPaymentDesc}>{p.description}</Text>}
+                        </View>
+                        <Text style={s.gigPaymentAmount}>${p.amount.toFixed(2)}</Text>
+                      </View>
+                    ))}
+                  </>
+                )}
+              </View>
+            ))}
+          </>
+        )}
+
+        {/* ── Monthly breakdown ────────────────────────────────────────────── */}
+        {(hasPayPeriodData || hasGigPayments) && jobsWithRate.length > 0 && (
+          <Text style={s.sectionHeader}>MONTHLY — {monthLabel(year, month).toUpperCase()}</Text>
+        )}
+
         {jobsWithRate.length === 0 ? (
-          <View style={s.empty}>
-            <Text style={s.emptyTitle}>No hourly rates set</Text>
-            <Text style={s.emptySubtitle}>
-              Add an hourly rate to a commitment to see earnings estimates here.
-            </Text>
-          </View>
+          !hasGigPayments && (
+            <View style={s.empty}>
+              <Text style={s.emptyTitle}>No hourly rates set</Text>
+              <Text style={s.emptySubtitle}>
+                Add an hourly rate to a commitment to see earnings estimates here.
+              </Text>
+            </View>
+          )
         ) : (
           <>
-            {earnings.map(({ job, totalHours, gross, shiftCount }) => (
+            {monthlyEarnings.map(({ job, totalHours, gross, shiftCount }) => (
               <View key={job.id} style={s.card}>
                 <View style={s.cardHeader}>
                   <View style={[s.colorDot, { backgroundColor: job.color }]} />
@@ -152,7 +290,6 @@ export default function EarningsScreen() {
               </View>
             ))}
 
-            {/* Total card */}
             <View style={[s.card, s.totalCard]}>
               <Text style={s.totalLabel}>Total for {monthLabel(year, month)}</Text>
               <View style={s.cardStats}>
@@ -183,13 +320,25 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
   },
   title: { fontSize: 24, fontWeight: '800', color: COLORS.textPrimary, letterSpacing: 0.3 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  exportBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: COLORS.surfaceHigh, borderWidth: 1, borderColor: COLORS.border },
+  exportBtnText: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' },
   monthBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: COLORS.surfaceHigh },
   monthBtnText: { fontSize: 14, color: COLORS.textPrimary, fontWeight: '600' },
   monthBtnChevron: { fontSize: 12, color: COLORS.textSecondary },
   content: { padding: 20, paddingBottom: 48, gap: 12 },
+
+  sectionHeader: {
+    fontSize: 11, fontWeight: '700', color: COLORS.textMuted,
+    letterSpacing: 1.5, marginBottom: 4, marginTop: 4,
+  },
+
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: 16, padding: 20,
+  },
+  periodCard: {
+    borderWidth: 1, borderColor: COLORS.accent + '33',
   },
   totalCard: {
     backgroundColor: COLORS.surfaceHigh,
@@ -200,6 +349,7 @@ const s = StyleSheet.create({
   colorDot: { width: 12, height: 12, borderRadius: 6 },
   cardJobName: { flex: 1, fontSize: 16, fontWeight: '700', color: COLORS.textPrimary },
   cardRate: { fontSize: 13, color: COLORS.textSecondary },
+  periodRange: { fontSize: 12, color: COLORS.textSecondary },
   cardStats: { flexDirection: 'row', alignItems: 'center' },
   stat: { flex: 1, alignItems: 'center' },
   statValue: { fontSize: 22, fontWeight: '800', color: COLORS.textPrimary },
@@ -209,9 +359,25 @@ const s = StyleSheet.create({
   statDivider: { width: 1, height: 36, backgroundColor: COLORS.border },
   totalLabel: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 16 },
   disclaimer: { fontSize: 11, color: COLORS.textMuted, marginTop: 16, textAlign: 'center' },
+
+  paydayLabel: { fontSize: 12, color: COLORS.textMuted, marginTop: 14, textAlign: 'center' },
+  paydayDate: { color: COLORS.accent, fontWeight: '700' },
+
+  // Gig payments
+  gigGroupLabel: { fontSize: 10, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 1, marginBottom: 8 },
+  gigPaymentRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  gigPaymentDate: { fontSize: 14, color: COLORS.textPrimary, fontWeight: '600' },
+  recentDate: { color: COLORS.textSecondary },
+  gigPaymentDesc: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
+  gigPaymentAmount: { fontSize: 16, color: COLORS.textSecondary, fontWeight: '700' },
+
   empty: { flex: 1, alignItems: 'center', paddingTop: 80, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 10 },
   emptySubtitle: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22 },
+
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },

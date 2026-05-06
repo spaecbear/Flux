@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Job, Shift, RecurringShift } from '../types';
+import { Job, Shift, RecurringShift, GigPayment } from '../types';
 
 const KEYS = {
   JOBS: '@flux/jobs',
   SHIFTS: '@flux/shifts',
   RECURRING: '@flux/recurring',
+  GIG_PAYMENTS: '@flux/gig_payments',
 };
 
 // ── Jobs ────────────────────────────────────────────────────────────────────
@@ -12,9 +13,9 @@ const KEYS = {
 export async function getJobs(): Promise<Job[]> {
   const raw = await AsyncStorage.getItem(KEYS.JOBS);
   if (!raw) return [];
-  // backfill ignoreOverlap for records saved before this field existed
   return (JSON.parse(raw) as Job[]).map(j => ({
     ignoreOverlap: false,
+    paySchedule: null,
     ...j,
   }));
 }
@@ -39,6 +40,8 @@ export async function deleteJob(id: string): Promise<Job[]> {
   await saveShifts(shifts);
   const recurring = (await getRecurringShifts()).filter(r => r.jobId !== id);
   await saveRecurringShifts(recurring);
+  const payments = (await getGigPayments()).filter(p => p.jobId !== id);
+  await saveGigPayments(payments);
   return jobs;
 }
 
@@ -62,10 +65,21 @@ export async function upsertShift(shift: Shift): Promise<Shift[]> {
   return shifts;
 }
 
-export async function deleteShift(id: string): Promise<Shift[]> {
+export async function deleteShift(id: string): Promise<{ shifts: Shift[]; gigPayments: GigPayment[] }> {
   const shifts = (await getShifts()).filter(s => s.id !== id);
   await saveShifts(shifts);
-  return shifts;
+  const gigPayments = (await getGigPayments()).filter(p => p.shiftId !== id);
+  await saveGigPayments(gigPayments);
+  return { shifts, gigPayments };
+}
+
+export async function upsertGigPayment(p: GigPayment): Promise<GigPayment[]> {
+  const list = await getGigPayments();
+  const idx = list.findIndex(x => x.id === p.id);
+  if (idx >= 0) list[idx] = p;
+  else list.push(p);
+  await saveGigPayments(list);
+  return list;
 }
 
 // ── Recurring shifts ─────────────────────────────────────────────────────────
@@ -91,5 +105,29 @@ export async function upsertRecurringShift(r: RecurringShift): Promise<Recurring
 export async function deleteRecurringShift(id: string): Promise<RecurringShift[]> {
   const list = (await getRecurringShifts()).filter(r => r.id !== id);
   await saveRecurringShifts(list);
+  return list;
+}
+
+// ── Gig payments ─────────────────────────────────────────────────────────────
+
+export async function getGigPayments(): Promise<GigPayment[]> {
+  const raw = await AsyncStorage.getItem(KEYS.GIG_PAYMENTS);
+  return raw ? JSON.parse(raw) : [];
+}
+
+export async function saveGigPayments(list: GigPayment[]): Promise<void> {
+  await AsyncStorage.setItem(KEYS.GIG_PAYMENTS, JSON.stringify(list));
+}
+
+export async function replaceGigPaymentsForJob(jobId: string, payments: GigPayment[]): Promise<GigPayment[]> {
+  const all = (await getGigPayments()).filter(p => p.jobId !== jobId);
+  const next = [...all, ...payments];
+  await saveGigPayments(next);
+  return next;
+}
+
+export async function deleteGigPayment(id: string): Promise<GigPayment[]> {
+  const list = (await getGigPayments()).filter(p => p.id !== id);
+  await saveGigPayments(list);
   return list;
 }
