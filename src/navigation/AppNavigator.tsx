@@ -10,6 +10,7 @@ import AddShiftScreen from '../screens/AddShiftScreen';
 import CommitmentsScreen from '../screens/CommitmentsScreen';
 import EditCommitmentScreen from '../screens/EditCommitmentScreen';
 import EarningsScreen from '../screens/EarningsScreen';
+import WeekScreen from '../screens/WeekScreen';
 
 export type RootStackParamList = {
   Main: undefined;
@@ -19,6 +20,7 @@ export type RootStackParamList = {
 
 export type TabParamList = {
   Home: undefined;
+  Week: undefined;
   Commitments: undefined;
   Earnings: undefined;
 };
@@ -29,6 +31,7 @@ const Tab = createBottomTabNavigator<TabParamList>();
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   const icons: Record<string, string> = {
     Home: '◉',
+    Week: '▦',
     Commitments: '⬡',
     Earnings: '◈',
   };
@@ -63,6 +66,7 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Week" component={WeekScreen} />
       <Tab.Screen name="Commitments" component={CommitmentsScreen} />
       <Tab.Screen name="Earnings" component={EarningsScreen} />
     </Tab.Navigator>
