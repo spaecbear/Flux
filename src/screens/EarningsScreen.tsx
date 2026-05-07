@@ -87,20 +87,29 @@ export default function EarningsScreen() {
     [shifts, recurringShifts, startISO, endISO],
   );
 
+  // All jobs that have at least one shift in the selected month (rated or not)
+  const jobsWithShifts = useMemo(() => {
+    const jobsInMonth = new Set(allMonthShifts.map(s => s.jobId));
+    return jobs.filter(j => jobsInMonth.has(j.id));
+  }, [jobs, allMonthShifts]);
+
+  // Subset with hourly rates (used for the earnings total only)
   const jobsWithRate = useMemo(() => jobs.filter(j => j.hourlyRate != null), [jobs]);
 
   // ── Monthly earnings per job ──────────────────────────────────────────────
   const monthlyEarnings = useMemo(() => {
-    return jobsWithRate.map(job => {
+    return jobsWithShifts.map(job => {
       const jobShifts = allMonthShifts.filter(s => s.jobId === job.id);
       const totalHours = jobShifts.reduce((sum, s) => sum + shiftDurationHours(s), 0);
-      const gross = totalHours * (job.hourlyRate ?? 0);
+      const rate = job.hourlyRate;
+      const gross = rate != null ? totalHours * rate : null;
       return { job, totalHours, gross, shiftCount: jobShifts.length };
     });
-  }, [jobsWithRate, allMonthShifts]);
+  }, [jobsWithShifts, allMonthShifts]);
 
+  // Totals only count jobs with rates
   const totalHours = monthlyEarnings.reduce((s, e) => s + e.totalHours, 0);
-  const totalGross = monthlyEarnings.reduce((s, e) => s + e.gross, 0);
+  const totalGross = monthlyEarnings.filter(e => e.gross != null).reduce((s, e) => s + (e.gross ?? 0), 0);
 
   // ── Current pay period per regular job (only shown on current month) ──────
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
@@ -252,19 +261,17 @@ export default function EarningsScreen() {
         )}
 
         {/* ── Monthly breakdown ────────────────────────────────────────────── */}
-        {(hasPayPeriodData || hasGigPayments) && jobsWithRate.length > 0 && (
+        {(hasPayPeriodData || hasGigPayments) && monthlyEarnings.length > 0 && (
           <Text style={s.sectionHeader}>MONTHLY — {monthLabel(year, month).toUpperCase()}</Text>
         )}
 
-        {jobsWithRate.length === 0 ? (
-          !hasGigPayments && (
-            <View style={s.empty}>
-              <Text style={s.emptyTitle}>No hourly rates set</Text>
-              <Text style={s.emptySubtitle}>
-                Add an hourly rate to a commitment to see earnings estimates here.
-              </Text>
-            </View>
-          )
+        {monthlyEarnings.length === 0 && !hasGigPayments ? (
+          <View style={s.empty}>
+            <Text style={s.emptyTitle}>No shifts this month</Text>
+            <Text style={s.emptySubtitle}>
+              Add shifts on the Home or Week tab to see them here.
+            </Text>
+          </View>
         ) : (
           <>
             {monthlyEarnings.map(({ job, totalHours, gross, shiftCount }) => (
@@ -272,7 +279,9 @@ export default function EarningsScreen() {
                 <View style={s.cardHeader}>
                   <View style={[s.colorDot, { backgroundColor: job.color }]} />
                   <Text style={s.cardJobName}>{job.name}</Text>
-                  <Text style={s.cardRate}>${job.hourlyRate}/hr</Text>
+                  <Text style={s.cardRate}>
+                    {job.hourlyRate != null ? `$${job.hourlyRate}/hr` : 'No rate set'}
+                  </Text>
                 </View>
                 <View style={s.cardStats}>
                   <View style={s.stat}>
@@ -286,7 +295,11 @@ export default function EarningsScreen() {
                   </View>
                   <View style={s.statDivider} />
                   <View style={s.stat}>
-                    <Text style={[s.statValue, s.earnValue]}>${gross.toFixed(2)}</Text>
+                    {gross != null ? (
+                      <Text style={[s.statValue, s.earnValue]}>${gross.toFixed(2)}</Text>
+                    ) : (
+                      <Text style={[s.statValue, { color: COLORS.textMuted }]}>—</Text>
+                    )}
                     <Text style={s.statLabel}>estimated</Text>
                   </View>
                 </View>
