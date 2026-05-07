@@ -57,11 +57,13 @@ export function allShiftsInWindow(
   fromISO: string,
   toISO: string,
 ): Shift[] {
+  // Only include manual shifts that fall within the requested window
+  const windowManual = manualShifts.filter(s => s.date >= fromISO && s.date <= toISO);
   const expanded = recurringShifts.flatMap(r => expandRecurringShift(r, fromISO, toISO));
   // Manual shifts override any recurring slot with the same date+job
-  const manualKeys = new Set(manualShifts.map(s => `${s.jobId}_${s.date}`));
+  const manualKeys = new Set(windowManual.map(s => `${s.jobId}_${s.date}`));
   const filteredExpanded = expanded.filter(s => !manualKeys.has(`${s.jobId}_${s.date}`));
-  return [...manualShifts, ...filteredExpanded];
+  return [...windowManual, ...filteredExpanded];
 }
 
 export function findConflicts(

@@ -102,10 +102,13 @@ export default function EarningsScreen() {
   const totalHours = monthlyEarnings.reduce((s, e) => s + e.totalHours, 0);
   const totalGross = monthlyEarnings.reduce((s, e) => s + e.gross, 0);
 
-  // ── Current pay period per regular job ────────────────────────────────────
+  // ── Current pay period per regular job (only shown on current month) ──────
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
+
   const payPeriodJobs = useMemo(() => {
+    if (!isCurrentMonth) return [];
     return jobs.filter(j => j.type === 'regular' && j.paySchedule && j.hourlyRate != null);
-  }, [jobs]);
+  }, [jobs, isCurrentMonth]);
 
   const payPeriodData = useMemo(() => {
     return payPeriodJobs.map(job => {
@@ -118,20 +121,20 @@ export default function EarningsScreen() {
     });
   }, [payPeriodJobs, shifts, recurringShifts, todayISO]);
 
-  // ── Gig payments split by past/upcoming ───────────────────────────────────
+  // ── Gig payments filtered to selected month ───────────────────────────────
   const gigJobsWithPayments = useMemo(() => {
     return jobs
       .filter(j => j.type === 'gig')
       .map(job => {
         const payments = gigPayments
-          .filter(p => p.jobId === job.id)
+          .filter(p => p.jobId === job.id && p.expectedDate >= startISO && p.expectedDate <= endISO)
           .sort((a, b) => a.expectedDate.localeCompare(b.expectedDate));
         const recent = payments.filter(p => p.expectedDate < todayISO);
         const upcoming = payments.filter(p => p.expectedDate >= todayISO);
         return { job, recent, upcoming };
       })
       .filter(({ recent, upcoming }) => recent.length > 0 || upcoming.length > 0);
-  }, [jobs, gigPayments, todayISO]);
+  }, [jobs, gigPayments, startISO, endISO, todayISO]);
 
   const hasPayPeriodData = payPeriodData.length > 0;
   const hasGigPayments = gigJobsWithPayments.length > 0;
