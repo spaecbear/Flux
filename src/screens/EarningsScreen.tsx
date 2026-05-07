@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Modal,
 } from 'react-native';
@@ -28,25 +28,40 @@ function shortDate(iso: string) {
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+const MONTH_ITEM_HEIGHT = 48;
+
 function MonthPickerModal({
   visible, year, month, onSelect, onClose,
 }: {
   visible: boolean; year: number; month: number;
   onSelect: (y: number, m: number) => void; onClose: () => void;
 }) {
+  const scrollRef = useRef<ScrollView>(null);
   const now = new Date();
-  const months = [];
+  const months: { year: number; month: number }[] = [];
   for (let i = -12; i <= 3; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
     months.push({ year: d.getFullYear(), month: d.getMonth() });
   }
+
+  const selectedIndex = months.findIndex(mo => mo.year === year && mo.month === month);
+
+  // Auto-scroll to selected month when the modal opens
+  useEffect(() => {
+    if (visible && selectedIndex >= 0) {
+      const offset = Math.max(0, (selectedIndex - 1) * MONTH_ITEM_HEIGHT);
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({ y: offset, animated: false });
+      }, 50);
+    }
+  }, [visible]);
 
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={s.modalOverlay}>
         <View style={s.modalCard}>
           <Text style={s.modalTitle}>Select Month</Text>
-          <ScrollView style={{ maxHeight: 300 }}>
+          <ScrollView ref={scrollRef} style={{ maxHeight: 300 }}>
             {months.map(({ year: y, month: m }) => {
               const selected = y === year && m === month;
               return (
@@ -398,10 +413,10 @@ const s = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 12 },
-  monthOption: { paddingVertical: 12, paddingHorizontal: 8, borderRadius: 8 },
-  monthOptionSelected: { backgroundColor: COLORS.surfaceHigh },
+  monthOption: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 8, minHeight: 48, justifyContent: 'center' },
+  monthOptionSelected: { backgroundColor: COLORS.accent + '22', borderWidth: 1, borderColor: COLORS.accent + '66' },
   monthOptionText: { fontSize: 16, color: COLORS.textSecondary },
-  monthOptionTextSelected: { color: COLORS.textPrimary, fontWeight: '700' },
+  monthOptionTextSelected: { color: COLORS.accent, fontWeight: '800' },
   modalClose: { marginTop: 16, paddingVertical: 14, borderRadius: 12, backgroundColor: COLORS.surfaceHigh, alignItems: 'center' },
   modalCloseText: { fontSize: 15, color: COLORS.textSecondary, fontWeight: '600' },
 });
