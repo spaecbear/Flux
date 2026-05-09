@@ -169,6 +169,8 @@ export default function AddShiftScreen() {
     [editingShift, gigPayments],
   );
 
+  const [notes, setNotes] = useState(editingShift?.notes ?? '');
+
   const [paymentEnabled, setPaymentEnabled] = useState(!!existingPayment);
   const [payAmount, setPayAmount] = useState(existingPayment?.amount != null ? String(existingPayment.amount) : '');
   const [payDate, setPayDate] = useState(existingPayment?.expectedDate ?? weeksOut(2));
@@ -240,6 +242,7 @@ export default function AddShiftScreen() {
       startTime: formatTime24(startH, startM),
       endTime: formatTime24(endH, endM),
       confirmedConflict: confirmConflict,
+      notes: notes.trim() || undefined,
     });
 
     // Handle gig payment
@@ -402,6 +405,19 @@ export default function AddShiftScreen() {
           </>
         )}
 
+        <Text style={s.sectionLabel}>NOTES</Text>
+        <TextInput
+          style={s.notesInput}
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="Address, reminders, anything useful…"
+          placeholderTextColor={COLORS.textMuted}
+          multiline
+          numberOfLines={3}
+          textAlignVertical="top"
+          returnKeyType="default"
+        />
+
         <TouchableOpacity style={s.saveBtn} onPress={() => handleSave()} activeOpacity={0.85}>
           <Text style={s.saveBtnText}>Save Shift</Text>
         </TouchableOpacity>
@@ -498,6 +514,12 @@ const s = StyleSheet.create({
     fontSize: 14, color: COLORS.textPrimary,
   },
 
+  notesInput: {
+    backgroundColor: COLORS.surfaceHigh,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, color: COLORS.textPrimary,
+    minHeight: 80, lineHeight: 20,
+  },
   saveBtn: {
     marginTop: 32, backgroundColor: COLORS.accent,
     borderRadius: 14, paddingVertical: 16, alignItems: 'center',

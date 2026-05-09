@@ -191,6 +191,11 @@ export default function WeekScreen() {
                       <Text style={s.shiftTime}>
                         {formatTimeRange(shift.startTime, shift.endTime)}
                       </Text>
+                      {!!shift.notes && (
+                        <Text style={s.shiftNotes} numberOfLines={1}>
+                          {shift.notes}
+                        </Text>
+                      )}
                     </View>
                     {shift.confirmedConflict && (
                       <View style={s.conflictDot} />
@@ -362,6 +367,12 @@ const s = StyleSheet.create({
   shiftTime: {
     fontSize: 12,
     color: COLORS.textSecondary,
+  },
+  shiftNotes: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   conflictDot: {
     width: 8,

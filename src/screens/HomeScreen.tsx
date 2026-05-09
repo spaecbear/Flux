@@ -82,6 +82,9 @@ function DayPanel({
                     <View style={s.shiftInfo}>
                       <Text style={s.shiftJobName}>{job.name}</Text>
                       <Text style={s.shiftTime}>{formatTimeRange(shift.startTime, shift.endTime)}</Text>
+                      {!!shift.notes && (
+                        <Text style={s.shiftNotes} numberOfLines={2}>{shift.notes}</Text>
+                      )}
                     </View>
                     {shift.confirmedConflict && (
                       <View style={s.conflictBadge}><Text style={s.conflictBadgeText}>!</Text></View>
@@ -412,6 +415,7 @@ const s = StyleSheet.create({
   shiftInfo: { flex: 1, paddingHorizontal: 14, paddingVertical: 14 },
   shiftJobName: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 2 },
   shiftTime: { fontSize: 13, color: COLORS.textSecondary },
+  shiftNotes: { fontSize: 12, color: COLORS.textMuted, marginTop: 3, fontStyle: 'italic', lineHeight: 17 },
   conflictBadge: {
     width: 24, height: 24, borderRadius: 12,
     backgroundColor: COLORS.conflict,

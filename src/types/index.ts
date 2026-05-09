@@ -33,6 +33,7 @@ export interface Shift {
   endTime: string;      // "HH:MM" 24hr
   confirmedConflict: boolean;
   isRecurring?: boolean;
+  notes?: string;       // optional free-text notes / address / reminders
 }
 
 // A recurring schedule template — expanded into virtual Shifts on the fly
