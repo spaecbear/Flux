@@ -1,6 +1,6 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Modal,
+  View, Text, StyleSheet, ScrollView, FlatList, SafeAreaView, TouchableOpacity, Modal,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { useApp } from '../context/AppContext';
@@ -36,7 +36,6 @@ function MonthPickerModal({
   visible: boolean; year: number; month: number;
   onSelect: (y: number, m: number) => void; onClose: () => void;
 }) {
-  const scrollRef = useRef<ScrollView>(null);
   const now = new Date();
   const months: { year: number; month: number }[] = [];
   for (let i = -12; i <= 3; i++) {
@@ -45,28 +44,28 @@ function MonthPickerModal({
   }
 
   const selectedIndex = months.findIndex(mo => mo.year === year && mo.month === month);
-
-  // Auto-scroll to selected month when the modal opens
-  useEffect(() => {
-    if (visible && selectedIndex >= 0) {
-      const offset = Math.max(0, (selectedIndex - 1) * MONTH_ITEM_HEIGHT);
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({ y: offset, animated: false });
-      }, 50);
-    }
-  }, [visible]);
+  // Show one item of context above the selected month
+  const initialIndex = Math.max(0, selectedIndex - 1);
 
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={s.modalOverlay}>
         <View style={s.modalCard}>
           <Text style={s.modalTitle}>Select Month</Text>
-          <ScrollView ref={scrollRef} style={{ maxHeight: 300 }}>
-            {months.map(({ year: y, month: m }) => {
+          <FlatList
+            data={months}
+            style={{ maxHeight: 300 }}
+            keyExtractor={item => `${item.year}-${item.month}`}
+            getItemLayout={(_, index) => ({
+              length: MONTH_ITEM_HEIGHT,
+              offset: MONTH_ITEM_HEIGHT * index,
+              index,
+            })}
+            initialScrollIndex={initialIndex}
+            renderItem={({ item: { year: y, month: m } }) => {
               const selected = y === year && m === month;
               return (
                 <TouchableOpacity
-                  key={`${y}-${m}`}
                   style={[s.monthOption, selected && s.monthOptionSelected]}
                   onPress={() => { onSelect(y, m); onClose(); }}
                 >
@@ -75,8 +74,8 @@ function MonthPickerModal({
                   </Text>
                 </TouchableOpacity>
               );
-            })}
-          </ScrollView>
+            }}
+          />
           <TouchableOpacity style={s.modalClose} onPress={onClose}>
             <Text style={s.modalCloseText}>Cancel</Text>
           </TouchableOpacity>
