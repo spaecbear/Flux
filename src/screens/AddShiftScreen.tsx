@@ -170,6 +170,7 @@ export default function AddShiftScreen() {
   );
 
   const [notes, setNotes] = useState(editingShift?.notes ?? '');
+  const [flagged, setFlagged] = useState(editingShift?.flagged ?? false);
 
   const [paymentEnabled, setPaymentEnabled] = useState(!!existingPayment);
   const [payAmount, setPayAmount] = useState(existingPayment?.amount != null ? String(existingPayment.amount) : '');
@@ -243,6 +244,7 @@ export default function AddShiftScreen() {
       endTime: formatTime24(endH, endM),
       confirmedConflict: confirmConflict,
       notes: notes.trim() || undefined,
+      flagged: flagged || undefined,
     });
 
     // Handle gig payment
@@ -405,18 +407,33 @@ export default function AddShiftScreen() {
           </>
         )}
 
-        <Text style={s.sectionLabel}>NOTES</Text>
+        <View style={s.notesSectionHeader}>
+          <Text style={s.sectionLabel}>NOTES</Text>
+          <TouchableOpacity
+            style={[s.flagBtn, flagged && s.flagBtnOn]}
+            onPress={() => setFlagged(v => !v)}
+          >
+            <Text style={[s.flagBtnIcon, flagged && s.flagBtnIconOn]}>⚑</Text>
+            <Text style={[s.flagBtnLabel, flagged && s.flagBtnLabelOn]}>
+              {flagged ? 'Flagged' : 'Flag'}
+            </Text>
+          </TouchableOpacity>
+        </View>
         <TextInput
           style={s.notesInput}
           value={notes}
-          onChangeText={setNotes}
+          onChangeText={t => setNotes(t.slice(0, 200))}
           placeholder="Address, reminders, anything useful…"
           placeholderTextColor={COLORS.textMuted}
           multiline
           numberOfLines={3}
           textAlignVertical="top"
           returnKeyType="default"
+          maxLength={200}
         />
+        <Text style={[s.charCount, notes.length >= 180 && s.charCountWarn]}>
+          {notes.length}/200
+        </Text>
 
         <TouchableOpacity style={s.saveBtn} onPress={() => handleSave()} activeOpacity={0.85}>
           <Text style={s.saveBtnText}>Save Shift</Text>
@@ -514,12 +531,32 @@ const s = StyleSheet.create({
     fontSize: 14, color: COLORS.textPrimary,
   },
 
+  notesSectionHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 24, marginBottom: 8,
+  },
+  flagBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
+    backgroundColor: COLORS.surfaceHigh, borderWidth: 1, borderColor: COLORS.border,
+  },
+  flagBtnOn: {
+    backgroundColor: '#ffd54f22', borderColor: '#ffd54f88',
+  },
+  flagBtnIcon: { fontSize: 13, color: COLORS.textMuted },
+  flagBtnIconOn: { color: '#ffd54f' },
+  flagBtnLabel: { fontSize: 12, color: COLORS.textMuted, fontWeight: '600' },
+  flagBtnLabelOn: { color: '#ffd54f' },
   notesInput: {
     backgroundColor: COLORS.surfaceHigh,
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 14, color: COLORS.textPrimary,
     minHeight: 80, lineHeight: 20,
   },
+  charCount: {
+    fontSize: 11, color: COLORS.textMuted, textAlign: 'right', marginTop: 4,
+  },
+  charCountWarn: { color: '#ffd54f' },
   saveBtn: {
     marginTop: 32, backgroundColor: COLORS.accent,
     borderRadius: 14, paddingVertical: 16, alignItems: 'center',

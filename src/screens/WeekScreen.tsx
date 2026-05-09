@@ -192,11 +192,14 @@ export default function WeekScreen() {
                         {formatTimeRange(shift.startTime, shift.endTime)}
                       </Text>
                       {!!shift.notes && (
-                        <Text style={s.shiftNotes} numberOfLines={1}>
+                        <Text style={s.shiftNotes}>
                           {shift.notes}
                         </Text>
                       )}
                     </View>
+                    {!!shift.flagged && (
+                      <Text style={s.flagBadge}>⚑</Text>
+                    )}
                     {shift.confirmedConflict && (
                       <View style={s.conflictDot} />
                     )}
@@ -373,6 +376,12 @@ const s = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 2,
     fontStyle: 'italic',
+    lineHeight: 16,
+  },
+  flagBadge: {
+    fontSize: 14,
+    color: '#ffd54f',
+    marginLeft: 4,
   },
   conflictDot: {
     width: 8,
