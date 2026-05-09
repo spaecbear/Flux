@@ -124,7 +124,7 @@ export default function EarningsScreen() {
 
   // Totals only count jobs with rates
   const totalHours = monthlyEarnings.reduce((s, e) => s + e.totalHours, 0);
-  const totalGross = monthlyEarnings.filter(e => e.gross != null).reduce((s, e) => s + (e.gross ?? 0), 0);
+  const totalHourlyGross = monthlyEarnings.filter(e => e.gross != null).reduce((s, e) => s + (e.gross ?? 0), 0);
 
   // ── Current pay period per regular job (only shown on current month) ──────
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
@@ -162,6 +162,15 @@ export default function EarningsScreen() {
 
   const hasPayPeriodData = payPeriodData.length > 0;
   const hasGigPayments = gigJobsWithPayments.length > 0;
+
+  // Sum all gig payments in the month (both past and upcoming)
+  const totalGigAmount = gigJobsWithPayments.reduce((sum, { recent, upcoming }) => {
+    return sum
+      + recent.reduce((s, p) => s + p.amount, 0)
+      + upcoming.reduce((s, p) => s + p.amount, 0);
+  }, 0);
+
+  const totalGross = totalHourlyGross + totalGigAmount;
 
   function handleExport() {
     const label = monthLabel(year, month);
@@ -334,7 +343,9 @@ export default function EarningsScreen() {
                   <Text style={s.statLabel}>gross est.</Text>
                 </View>
               </View>
-              <Text style={s.disclaimer}>* Pre-tax estimate based on scheduled hours</Text>
+              <Text style={s.disclaimer}>
+                * Pre-tax estimate based on scheduled hours{hasGigPayments ? ' + expected gig payments' : ''}
+              </Text>
             </View>
           </>
         )}
