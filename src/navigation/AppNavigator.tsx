@@ -46,12 +46,12 @@ const TAB_LABELS: Record<string, string> = {
 function TabIcon({ name, focused, color }: { name: string; focused: boolean; color: string }) {
   return (
     <View style={{ alignItems: 'center', gap: 3 }}>
-      <Text style={{ fontSize: 18, color, opacity: focused ? 1 : 0.45, lineHeight: 22 }}>
+      <Text style={{ fontSize: 18, color, lineHeight: 22 }}>
         {TAB_ICONS[name]}
       </Text>
       <Text
         numberOfLines={1}
-        style={{ fontSize: 10, color, opacity: focused ? 1 : 0.45, letterSpacing: 0.8, lineHeight: 13 }}
+        style={{ fontSize: 10, color, letterSpacing: 0.8, lineHeight: 13, fontWeight: focused ? '700' : '400' }}
       >
         {TAB_LABELS[name]}
       </Text>
@@ -69,7 +69,7 @@ function MainTabs() {
         tabBarShowLabel: false,
         tabBarIcon: ({ focused, color }) => <TabIcon name={route.name} focused={focused} color={color} />,
         tabBarActiveTintColor: COLORS.accent,
-        tabBarInactiveTintColor: COLORS.textMuted,
+        tabBarInactiveTintColor: COLORS.textSecondary,
         tabBarStyle: {
           backgroundColor: COLORS.surface,
           borderTopColor: COLORS.border,
