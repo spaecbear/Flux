@@ -170,7 +170,6 @@ export default function AddShiftScreen() {
   );
 
   const [notes, setNotes] = useState(editingShift?.notes ?? '');
-  const [flagged, setFlagged] = useState(editingShift?.flagged ?? false);
 
   const [paymentEnabled, setPaymentEnabled] = useState(!!existingPayment);
   const [payAmount, setPayAmount] = useState(existingPayment?.amount != null ? String(existingPayment.amount) : '');
@@ -244,7 +243,6 @@ export default function AddShiftScreen() {
       endTime: formatTime24(endH, endM),
       confirmedConflict: confirmConflict,
       notes: notes.trim() || undefined,
-      flagged: flagged || undefined,
     });
 
     // Handle gig payment
@@ -409,15 +407,7 @@ export default function AddShiftScreen() {
 
         <View style={s.notesSectionHeader}>
           <Text style={s.sectionLabel}>NOTES</Text>
-          <TouchableOpacity
-            style={[s.flagBtn, flagged && s.flagBtnOn]}
-            onPress={() => setFlagged(v => !v)}
-          >
-            <Text style={[s.flagBtnIcon, flagged && s.flagBtnIconOn]}>⚑</Text>
-            <Text style={[s.flagBtnLabel, flagged && s.flagBtnLabelOn]}>
-              {flagged ? 'Flagged' : 'Flag'}
-            </Text>
-          </TouchableOpacity>
+          <Text style={s.notesOptional}>Optional</Text>
         </View>
         <TextInput
           style={s.notesInput}
@@ -535,18 +525,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginTop: 24, marginBottom: 8,
   },
-  flagBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
-    backgroundColor: COLORS.surfaceHigh, borderWidth: 1, borderColor: COLORS.border,
-  },
-  flagBtnOn: {
-    backgroundColor: '#ffd54f22', borderColor: '#ffd54f88',
-  },
-  flagBtnIcon: { fontSize: 13, color: COLORS.textMuted },
-  flagBtnIconOn: { color: '#ffd54f' },
-  flagBtnLabel: { fontSize: 12, color: COLORS.textMuted, fontWeight: '600' },
-  flagBtnLabelOn: { color: '#ffd54f' },
+  notesOptional: { fontSize: 11, color: COLORS.textMuted, fontStyle: 'italic' },
   notesInput: {
     backgroundColor: COLORS.surfaceHigh,
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,

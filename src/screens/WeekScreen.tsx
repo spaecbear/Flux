@@ -197,9 +197,6 @@ export default function WeekScreen() {
                         </Text>
                       )}
                     </View>
-                    {!!shift.flagged && (
-                      <Text style={s.flagBadge}>⚑</Text>
-                    )}
                     {shift.confirmedConflict && (
                       <View style={s.conflictDot} />
                     )}
@@ -377,11 +374,6 @@ const s = StyleSheet.create({
     marginTop: 2,
     fontStyle: 'italic',
     lineHeight: 16,
-  },
-  flagBadge: {
-    fontSize: 14,
-    color: '#ffd54f',
-    marginLeft: 4,
   },
   conflictDot: {
     width: 8,

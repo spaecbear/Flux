@@ -86,9 +86,6 @@ function DayPanel({
                         <Text style={s.shiftNotes} numberOfLines={2}>{shift.notes}</Text>
                       )}
                     </View>
-                    {!!shift.flagged && (
-                      <Text style={s.flagBadge}>⚑</Text>
-                    )}
                     {shift.confirmedConflict && (
                       <View style={s.conflictBadge}><Text style={s.conflictBadgeText}>!</Text></View>
                     )}
@@ -419,7 +416,6 @@ const s = StyleSheet.create({
   shiftJobName: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 2 },
   shiftTime: { fontSize: 13, color: COLORS.textSecondary },
   shiftNotes: { fontSize: 12, color: COLORS.textMuted, marginTop: 3, fontStyle: 'italic', lineHeight: 17 },
-  flagBadge: { fontSize: 16, color: '#ffd54f', marginLeft: 4 },
   conflictBadge: {
     width: 24, height: 24, borderRadius: 12,
     backgroundColor: COLORS.conflict,

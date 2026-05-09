@@ -34,7 +34,6 @@ export interface Shift {
   confirmedConflict: boolean;
   isRecurring?: boolean;
   notes?: string;       // optional free-text notes / address / reminders
-  flagged?: boolean;    // user-set attention flag
 }
 
 // A recurring schedule template — expanded into virtual Shifts on the fly
