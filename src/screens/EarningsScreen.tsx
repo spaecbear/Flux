@@ -144,30 +144,36 @@ export default function EarningsScreen() {
     });
   }, [payPeriodJobs, shifts, recurringShifts, todayISO]);
 
-  // ── Gig payments filtered to selected month ───────────────────────────────
+  // ── Gig payments: recent = within selected month & past; upcoming = any future payment ──
   const gigJobsWithPayments = useMemo(() => {
     return jobs
       .filter(j => j.type === 'gig')
       .map(job => {
-        const payments = gigPayments
-          .filter(p => p.jobId === job.id && p.expectedDate >= startISO && p.expectedDate <= endISO)
+        const allJobPayments = gigPayments
+          .filter(p => p.jobId === job.id)
           .sort((a, b) => a.expectedDate.localeCompare(b.expectedDate));
-        const recent = payments.filter(p => p.expectedDate < todayISO);
-        const upcoming = payments.filter(p => p.expectedDate >= todayISO);
+        const recent = allJobPayments.filter(
+          p => p.expectedDate >= startISO && p.expectedDate < todayISO,
+        );
+        const upcoming = allJobPayments.filter(p => p.expectedDate >= todayISO);
         return { job, recent, upcoming };
       })
       .filter(({ recent, upcoming }) => recent.length > 0 || upcoming.length > 0);
-  }, [jobs, gigPayments, startISO, endISO, todayISO]);
+  }, [jobs, gigPayments, startISO, todayISO]);
 
   const hasPayPeriodData = payPeriodData.length > 0;
   const hasGigPayments = gigJobsWithPayments.length > 0;
 
-  // Sum all gig payments in the month (both past and upcoming)
-  const totalGigAmount = gigJobsWithPayments.reduce((sum, { recent, upcoming }) => {
-    return sum
-      + recent.reduce((s, p) => s + p.amount, 0)
-      + upcoming.reduce((s, p) => s + p.amount, 0);
-  }, 0);
+  // Sum only gig payments within the selected month for the monthly total
+  const totalGigAmount = useMemo(() => {
+    return jobs
+      .filter(j => j.type === 'gig')
+      .reduce((sum, job) => {
+        return sum + gigPayments
+          .filter(p => p.jobId === job.id && p.expectedDate >= startISO && p.expectedDate <= endISO)
+          .reduce((s, p) => s + p.amount, 0);
+      }, 0);
+  }, [jobs, gigPayments, startISO, endISO]);
 
   const totalGross = totalHourlyGross + totalGigAmount;
 
